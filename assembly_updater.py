@@ -19,8 +19,8 @@ def run_bowtie2(sample_name, ref, iter):
     #run bowtie2
     cmd1 = '%s -p %s \
             --no-unal \
-            --rg-id %s \
-            --rg SM:%s \
+            --rg-id tmp\
+            --rg SM:tmp \
             --rg LB:1 \
             --rg PU:1 \
             --rg PL:illumina \
@@ -28,34 +28,54 @@ def run_bowtie2(sample_name, ref, iter):
             -x %s  \
             -1 %s \
             -2 %s \
-            -S tmp/%s.iter%s.sam 2> tmp/btstats.iter%s.txt'%(bowtie2_cmd, args.Threads, sample_name, sample_name, ref, args.Left, args.Right, iter, iter)
+            -S tmp/iter%s.sam 2> tmp/iter%s.btstats.txt'%(bowtie2_cmd, args.Threads, ref, args.Left, args.Right, iter, iter)
     #convert to sorted bam
     cmd2 = '%s view -bh \
-            tmp/%s.iter%s.sam | \
+            tmp/iter%s.sam | \
             samtools sort -@ %s\
             - > \
-            tmp/%s.iter%s.bam'%(samtools_cmd, sample_name,iter,args.Threads,sample_name,iter)
+            tmp/iter%s.bam'%(samtools_cmd, iter,args.Threads,sample_name,iter)
     os.system(cmd1)
     os.system(cmd2)
 
 def align_rate(iter):
-    with open('tmp/btstats.iter%s.txt'%iter, 'r') as fh:
+    with open('tmp/iter%s.btstats.txt'%iter, 'r') as fh:
         bt2str = fh.read()
         m = re.search('(\d+\.\d+)\% overall alignment rate', bt2str)
         alnrt = m.group(1)
         return(float(alnrt))
 
-def rmdup():
+def rmdup(iter):
     cmd = 'java -jar \
             %s MarkDuplicates \
             CREATE_INDEX=true \
             USE_JDK_DEFLATER=true \
             USE_JDK_INFLATER=true \
-            M=SRR8525886/SRR8525886.aligned_consensus.bt2.rmdup_metrics.txt \
-            I=SRR8525886/SRR8525886.aligned_consensus.bt2.bam \
-            O=SRR8525886/SRR8525886.aligned_consensus.bt2.rmdup.bam \
+            M=tmp/iter%s.rmdup_metrics.txt \
+            I=tmp/iter%s.bam \
+            O=tmp/iter%s.rmdup.bam \
             REMOVE_DUPLICATES=true \
-            VALIDATION_STRINGENCY=LENIENT'%(picard_cmd, )
+            VALIDATION_STRINGENCY=LENIENT'%(picard_cmd, iter,iter,iter)
+    os.system(cmd)
+
+
+def call_variants(ref, iter):
+    refname = '.'.join(ref.split('.')[:-1])
+    cmd1 = "samtools faidx %s"%ref
+    cmd2 = "samtools dict %s > %s.dict"%(ref,refname)
+    cmd3 = "%s --java-options '-Xmx%sg' HaplotypeCaller  \
+       --use-jdk-deflater --use-jdk-inflater \
+       -R %s \
+       -I tmp/iter%s.rmdup.bam \
+       -O tmp/iter%s.vcf \
+       --min-base-quality-score 20 \
+       -ploidy 1"%(gatk_cmd, args.xmx, ref, iter, iter)
+    os.system(cmd1)
+    os.system(cmd2)
+    os.system(cmd3)
+
+def consensus():
+
 
 if __name__ == "__main__":
 
