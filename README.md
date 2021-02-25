@@ -1,7 +1,10 @@
 # assembly_updater
-Python script to improve read alignment to a reference genome by updating the reference using read mapping data
+Evolving viral populations often diverge substantially from available reference genomes, potentially reducing read mapping accuracy and biasing variant calls. 
+This Python script produces an updated reference genome that more closely matches the viral population by iteratively mapping reads to the reference and generating a new consensus sequence.
 
-Maps reads to a reference genome with Bowtie2, calls variants with GATK4, and generates a new consensus sequence.
-This process with continue in an iterative manner until there is no improve in alignment rate, or until the maximum number of iterations is met.
+Reads are mapped to a reference genome with Bowtie2, variants are called with GATK4 HaplotypeCaller, and a new consensus sequence is generated from the variant calls.
+This process continues in an iterative manner until there is no improvement in alignment rate, or until the specified maximum number of iterations is reached.
 
-Please update the python script to specify the path for bowtie2, picard, GATK4, and samtools.
+Please update the python script to specify your system path for bowtie2, picard, GATK4, and samtools.
+
+Currently, this script is able to add insertions and deletion to the updated reference causing positional mismatches between the original and updated reference.
