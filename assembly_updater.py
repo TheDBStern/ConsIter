@@ -12,11 +12,11 @@ gatk_cmd = "$EBROOTGATK/gatk"
 picard_cmd = "${EBROOTPICARD}/picard.jar"
 
 def run_bowtie2_idx(ref_fasta):
-    cmd = '%s-build -q %s temp/%s &> /dev/null' % (bowtie2_cmd, ref_fasta, target_name)
+    cmd = '%s-build -q %s %s &> /dev/null' % (bowtie2_cmd, ref_fasta, ref_fasta)
     os.system(cmd)
 
-def run_bowtie2(sample_name, ref, iter):
-    #run bowtie2
+def run_bowtie2(ref, iter):
+    #run bowtie2 and collect alignment stats
     cmd1 = '%s -p %s \
             --no-unal \
             --rg-id tmp\
@@ -34,7 +34,7 @@ def run_bowtie2(sample_name, ref, iter):
             tmp/iter%s.sam | \
             samtools sort -@ %s\
             - > \
-            tmp/iter%s.bam'%(samtools_cmd, iter,args.Threads,sample_name,iter)
+            tmp/iter%s.bam'%(samtools_cmd, iter,args.Threads,iter)
     os.system(cmd1)
     os.system(cmd2)
 
@@ -74,8 +74,14 @@ def call_variants(ref, iter):
     os.system(cmd2)
     os.system(cmd3)
 
-def consensus():
-
+def consensus(ref,iter):
+    cmd1 = "%s IndexFeatureFile -I tmp/iter%s.vcf"%(gatk_cmd, iter)
+    cmd2 = "%s FastaAlternateReferenceMaker \
+       -R %s \
+       -O tmp/consensus.iter%s.fa \
+       -V tmp/tmp/iter%s.vcf"%(gatk_cmd,ref,iter,iter)
+    os.system(cmd1)
+    os.system(cmd2)
 
 if __name__ == "__main__":
 
@@ -104,3 +110,50 @@ if __name__ == "__main__":
         print("Could not find GATK command. Adjust python script")
     if shutil.which(picard_cmd) == None:
         print("Could not find Picard command. Adjust python script")
+
+    #run main loop
+    iteration = 0
+
+    #reached last iteration
+    if iteration == args.maxIter:
+        print("Maximum number of iterations reached")
+        cmd = ("mv tmp/consensus.iter%s.fa updated_reference.fa"%iteration-1)
+        os.system(cmd)
+    # in first iteration, map to original reference genome
+    elif iteration == 0:
+        print("Indexing reference")
+        run_bowtie2_idx(args.ref)
+        print("Mapping reads")
+        run_bowtie2(args.ref, iteration)
+        alnrate = align_rate(iteration)
+        print("Removing duplicates")
+        rmdup(iteration)
+        print("Iteration %s alignment rate: %s"%(iteration,alnrate))
+        print("Calling variants")
+        call_variants(args.ref,iteration)
+        print("Generating updated reference")
+        consensus(args.ref,iteration)
+        iteration +=1
+    else:
+        #map to updated reference and check if alignment rate is better than last iteration
+        print("Indexing updated reference")
+        run_bowtie2_idx("tmp/consensus.iter%s.fa"%iteration)
+        print("Mapping reads")
+        run_bowtie2("tmp/consensus.iter%s.fa"%iteration, iteration)
+        alnrate_last = align_rate(iteration-1)
+        alnrate = align_rate(iteration)
+        print("Iteration %s alignment rate: %s"%(iteration-1,alnrate_last))
+        print("Iteration %s alignment rate: %s"%(iteration,alnrate))
+        if alnrate > alnrate_last:
+            print("Iteration %s alignment rate better than previous iteration\n \
+                    Generating new consensus..."%(iteration))
+            rmdup(iteration)
+            call_variants(args.ref,iteration)
+            consensus(args.ref,iteration)
+            iteration +=1
+        else:
+            print("No improvement in alignment rate")
+            print("Terminating")
+            cmd = ("mv tmp/consensus.iter%s.fa updated_reference.fa"%iteration-1)
+            os.system(cmd)
+            iteration +=1
