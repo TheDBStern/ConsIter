@@ -120,10 +120,11 @@ if __name__ == "__main__":
         if iteration == args.maxIter:
             print("Iteration %s"%iteration)
             print("Maximum number of iterations reached. Terminating.")
-            cmd = ("mv tmp/consensus.iter%s.fa updated_reference.fa"%(iteration-1))
+            cmd = ("mv tmp/consensus.iter%s.fa %s.updated_reference.fa"%((iteration-1),args.name))
             os.system(cmd)
             if not args.keep:
                 os.system('rm -rf tmp')
+            iteration +=1
         # in first iteration, map to original reference genome
         elif iteration == 0:
             print("Iteration %s"%iteration)
