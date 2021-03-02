@@ -96,7 +96,7 @@ def check_software(command):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Python script to improve read alignment to a reference genome by updating the reference using read mapping data')
+    parser = argparse.ArgumentParser(description='This Python script produces an updated reference genome that more closely matches the sequenced viral population by iteratively mapping reads to the reference and generating a new consensus sequence.')
     parser.add_argument('-ref', dest = 'ref', type = str, required=True,  help = 'Path to reference genome')
     parser.add_argument('-n', dest = 'name', type = str, required=True,  help = 'Sample name')
     parser.add_argument('-o', dest = 'outdir', type = str, required=True,  help = 'Output directory')
