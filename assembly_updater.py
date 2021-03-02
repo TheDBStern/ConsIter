@@ -77,22 +77,23 @@ def call_variants(ref, iter):
     os.system(cmd2)
     os.system(cmd3)
 
-def consensus(ref,iter):
-    cmd1 = "%s IndexFeatureFile -I %s/tmp/iter%s.vcf &> /dev/null"%(gatk_cmd, args.outdir, iter)
+def consensus(ref,iter,vcf):
+    cmd1 = "%s IndexFeatureFile -I %s &> /dev/null"%(gatk_cmd, vcf)
     cmd2 = "%s FastaAlternateReferenceMaker \
        -R %s \
        -O %s/tmp/consensus.iter%s.fa \
-       -V %s/tmp/iter%s.vcf &> /dev/null"%(gatk_cmd,ref,args.outdir,iter,args.outdir,iter)
+       -V %s &> /dev/null"%(gatk_cmd,ref,args.outdir,iter,vcf)
     os.system(cmd1)
     os.system(cmd2)
 
-def check_software(command):
-    status = subprocess.getstatusoutput(command)
-    m = re.search("command not found", str(status[1]))
-    if m is None:
-        return True
-    else:
-        return False
+def select_snps(ref,iter):
+    cmd = "%s SelectVariants \
+        --use-jdk-deflater --use-jdk-inflater \
+        -R %s \
+        -V %s/tmp/iter%s.vcf \
+        -select-type SNP \
+        -O %s/tmp/iter%s.snps.vcf &> /dev/null"%(gatk_cmd,ref,args.outdir,iter,args.outdir,iter)
+    os.system(cmd)
 
 if __name__ == "__main__":
 
@@ -106,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', dest= 'Threads', type = int, default= 16, help ='Number of threads to use. Default = 16')
     parser.add_argument('-xmx', dest= 'xmx', type = int, default= 50, help ='Maximum heap size for Java VM, in GB. Default = 50')
     parser.add_argument('--keep',dest= 'keep', action='store_true',help ='Keep temporary directory')
+    parser.add_argument('--noindel',dest= 'noindel', action='store_true',help ='Do not introduce insertions and deletions into new reference')
     args = parser.parse_args()
 
     #make output directory
@@ -118,17 +120,17 @@ if __name__ == "__main__":
 
     #check that all software works
     if shutil.which(bowtie2_cmd) == None:
-        print(sys.exit("Could not find bowtie2 command. Adjust python script"))
+        print(sys.exit("Could not find bowtie2 command. Adjust python script or load module"))
     if shutil.which(samtools_cmd) == None:
-        print(sys.exit("Could not find Samtools command. Adjust python script"))
+        print(sys.exit("Could not find Samtools command. Adjust python script or load module"))
     gatk_stat = subprocess.getstatusoutput(gatk_cmd)
     gatk_m = re.search("Usage", str(gatk_stat[1]))
     if gatk_m == None:
-        print(sys.exit("Could not find GATK command. Adjust python script"))
+        print(sys.exit("Could not find GATK command. Adjust python script or load module"))
     picard_stat = subprocess.getstatusoutput(picard_cmd)
     picard_m = re.search("PicardCommandLine", str(picard_stat[1]))
     if picard_m == None:
-        print(sys.exit("Could not find Picard command. Adjust python script"))
+        print(sys.exit("Could not find Picard command. Adjust python script or load module"))
 
 	#Check for valid file format and parameters
 
@@ -168,9 +170,15 @@ if __name__ == "__main__":
             print("Iteration %s alignment rate: %s"%(iteration,alnrate))
             print("Calling variants")
             call_variants(args.ref,iteration)
-            print("Generating updated reference")
-            consensus(args.ref,iteration)
-            iteration +=1
+            if args.noindel:
+                print("Generating updated reference")
+                select_snps(args.ref,iteration)
+                consensus(args.ref,iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration))
+                iteration +=1
+            else:
+                print("Generating updated reference")
+                consensus(args.ref,iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration))
+                iteration +=1
         else:
             #map to updated reference and check if alignment rate is better than last iteration
             print("Iteration %s"%iteration)
@@ -188,9 +196,15 @@ if __name__ == "__main__":
                 rmdup(iteration)
                 print("Calling variants")
                 call_variants("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration)
-                print("Generating updated reference")
-                consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration)
-                iteration +=1
+                if args.noindel:
+                    print("Generating updated reference")
+                    select_snps("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration)
+                    consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration))
+                    iteration +=1
+                else:
+                    print("Generating updated reference")
+                    consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration))
+                    iteration +=1
             else:
                 print("No improvement in alignment rate")
                 print("Terminating")
