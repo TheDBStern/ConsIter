@@ -8,10 +8,12 @@ import os
 import sys
 
 # set base commands for software on your system
+######################################################
 bowtie2_cmd = "bowtie2"
 samtools_cmd = "samtools"
 gatk_cmd = "$EBROOTGATK/gatk"
 picard_cmd = "java -jar ${EBROOTPICARD}/picard.jar"
+######################################################
 
 def run_bowtie2_idx(ref_fasta):
     cmd = '%s-build -q %s %s &> /dev/null' % (bowtie2_cmd, ref_fasta, ref_fasta)
@@ -119,12 +121,14 @@ if __name__ == "__main__":
         print(sys.exit("Could not find bowtie2 command. Adjust python script"))
     if shutil.which(samtools_cmd) == None:
         print(sys.exit("Could not find Samtools command. Adjust python script"))
-    """
-    if shutil.which(gatk_cmd) == None:
-        print("Could not find GATK command. Adjust python script")
-    if shutil.which(picard_cmd) == None:
-        print("Could not find Picard command. Adjust python script")
-    """
+    gatk_stat = subprocess.getstatusoutput(gatk_cmd)
+    gatk_m = re.search("Usage", str(gatk_stat[1]))
+    if gatk_m == None:
+        print(sys.exit("Could not find GATK command. Adjust python script"))
+    picard_stat = subprocess.getstatusoutput(picard_cmd)
+    picard_m = re.search("PicardCommandLine", str(picard_stat[1]))
+    if picard_m == None:
+        print(sys.exit("Could not find Picard command. Adjust python script"))
 
 	#Check for valid file format and parameters
 
