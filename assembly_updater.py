@@ -81,7 +81,7 @@ def consensus(ref,iter,vcf):
     cmd1 = "%s IndexFeatureFile -I %s &> /dev/null"%(gatk_cmd, vcf)
     cmd2 = "%s FastaAlternateReferenceMaker \
        -R %s \
-       -O %s/tmp/consensus.iter%s.fa \
+       -O %s/tmp/consensus.iter%s.tmpnames.fa \
        -V %s &> /dev/null"%(gatk_cmd,ref,args.outdir,iter,vcf)
     os.system(cmd1)
     os.system(cmd2)
@@ -94,6 +94,21 @@ def select_snps(ref,iter):
         -select-type SNP \
         -O %s/tmp/iter%s.snps.vcf &> /dev/null"%(gatk_cmd,ref,args.outdir,iter,args.outdir,iter)
     os.system(cmd)
+
+def rename(consensus,ref,outfasta):
+    fasta = open(consensus, 'r').read()
+    new = open(outfasta,'w')
+    refdict = open('.'.join(ref.split('.')[:-1])+'.dict','r')
+    next(refdict)
+    count=1
+    for line in refdict:
+        name = line.split('\t')[1].strip("SN:")
+        fasta = fasta.replace(">%s"%count, ">%s"%name)
+        count+=1
+    new.write(fasta)
+
+# SRR8525886_amplicons_refined_ref/SRR8525886_amplicons.updated_reference.fa
+# ../refs/HIV_B.K03455.HXB2.amplicons.fasta
 
 if __name__ == "__main__":
 
@@ -174,10 +189,12 @@ if __name__ == "__main__":
                 print("Generating updated reference")
                 select_snps(args.ref,iteration)
                 consensus(args.ref,iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration))
+                rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                 iteration +=1
             else:
                 print("Generating updated reference")
                 consensus(args.ref,iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration))
+                rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                 iteration +=1
         else:
             #map to updated reference and check if alignment rate is better than last iteration
@@ -200,10 +217,12 @@ if __name__ == "__main__":
                     print("Generating updated reference")
                     select_snps("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration)
                     consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration))
+                    rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                     iteration +=1
                 else:
                     print("Generating updated reference")
                     consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration))
+                    rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                     iteration +=1
             else:
                 print("No improvement in alignment rate")
