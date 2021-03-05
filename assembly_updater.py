@@ -102,7 +102,7 @@ def rename(consensus,ref,outfasta):
     next(refdict)
     count=1
     for line in refdict:
-        name = line.split('\t')[1].strip("SN:")
+        name = line.split('\t')[1].replace("SN:","")
         fasta = fasta.replace(">%s"%count, ">%s"%name)
         count+=1
     new.write(fasta)
@@ -167,8 +167,14 @@ if __name__ == "__main__":
         if iteration == args.maxIter:
             print("Iteration %s"%iteration)
             print("Maximum number of iterations reached. Terminating.")
-            cmd = ("mv %s/tmp/consensus.iter%s.fa %s/%s.updated_reference.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
-            os.system(cmd)
+            print("Updated reference genome is in %s/%s.updated_reference.fa"%(args.outdir,args.name))
+            cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.updated_reference.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+            os.system(cmd1)
+            print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
+            cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
+            os.system(cmd2)
+            cmd3 = ("mv %s/tmp/iter%s.rmdup.bai %s/%s.bt2.rmdup.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
+            os.system(cmd3)
             if not args.keep:
                 os.system('rm -rf %s/tmp'%args.outdir)
             iteration +=1
@@ -226,10 +232,15 @@ if __name__ == "__main__":
                     iteration +=1
             else:
                 print("No improvement in alignment rate")
-                print("Terminating")
-                print("Updated reference genome is in %s.updated_reference.fa"%args.name)
-                cmd = ("mv %s/tmp/consensus.iter%s.fa %s/%s.updated_reference.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
-                os.system(cmd)
+                print("Generating final consensus sequence and bam file")
+                print("Updated reference genome is in %s/%s.updated_reference.fa"%(args.outdir,args.name))
+                cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.updated_reference.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+                os.system(cmd1)
+                print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
+                cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
+                os.system(cmd2)
+                cmd3 = ("mv %s/tmp/iter%s.rmdup.bai %s/%s.bt2.rmdup.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
+                os.system(cmd3)
                 if not args.keep:
                     os.system('rm -rf %s/tmp'%args.outdir)
                 break
