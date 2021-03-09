@@ -1,4 +1,4 @@
-# assembly_updater
+# ConsIter
 Evolving viral populations often diverge substantially from available reference genomes, potentially reducing read mapping accuracy and biasing variant calls. 
 This Python script produces an updated reference genome that more closely matches the viral population by iteratively mapping reads to the reference and generating a new consensus sequence.
 
@@ -7,4 +7,8 @@ This process continues in an iterative manner until there is no improvement in a
 
 Please update the python script to specify your system path for bowtie2, picard, GATK4, and samtools.
 
-Currently, this script is able to add insertions and deletion to the updated reference causing positional mismatches between the original and updated reference.
+Help menu is available by typing:
+    ConsIter.py -h
+
+Currently, this script is able to add insertions and deletion to the updated reference causing positional mismatches between the original and updated reference. To disable with behavior, use the flag:
+    --noindel
