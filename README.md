@@ -7,8 +7,6 @@ This process continues in an iterative manner until there is no improvement in a
 
 Please update the python script to specify your system path for bowtie2, picard, GATK4, and samtools.
 
-Help menu is available by typing:
-    ConsIter.py -h
+Help menu is available by typing: `ConsIter.py -h`
 
-Currently, this script is able to add insertions and deletion to the updated reference causing positional mismatches between the original and updated reference. To disable with behavior, use the flag:
-    --noindel
+Currently, this script is able to add insertions and deletion to the updated reference causing positional mismatches between the original and updated reference. To disable with behavior, use the flag `--noindel`
