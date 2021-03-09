@@ -15,11 +15,11 @@ gatk_cmd = "$EBROOTGATK/gatk"
 picard_cmd = "java -jar ${EBROOTPICARD}/picard.jar"
 ######################################################
 
-def run_bowtie2_idx(ref_fasta):
-    cmd = '%s-build -q %s %s &> /dev/null' % (bowtie2_cmd, ref_fasta, ref_fasta)
+def run_bowtie2_idx(bt2_cmd,ref_fasta):
+    cmd = '%s-build -q %s %s &> /dev/null' % (bt2_cmd, ref_fasta, ref_fasta)
     os.system(cmd)
 
-def run_bowtie2(ref, iter):
+def run_bowtie2(bt2_cmd, smt_cmd, ref, iter, threads, name, left, right, outdir):
     #run bowtie2 and collect alignment stats
     cmd1 = '%s -p %s \
             --no-unal \
@@ -32,24 +32,24 @@ def run_bowtie2(ref, iter):
             -x %s  \
             -1 %s \
             -2 %s \
-            -S %s/tmp/iter%s.sam 2> %s/tmp/iter%s.btstats.txt'%(bowtie2_cmd, args.Threads, args.name, args.name, ref, args.Left, args.Right, args.outdir, iter, args.outdir, iter)
+            -S %s/tmp/iter%s.sam 2> %s/tmp/iter%s.btstats.txt'%(bt2_cmd, threads, name, name, ref, left, right, outdir, iter, outdir, iter)
     #convert to sorted bam
     cmd2 = '%s view -bh \
             %s/tmp/iter%s.sam | \
             samtools sort -@ %s\
             -o %s/tmp/iter%s.bam \
-            - &> /dev/null'%(samtools_cmd, args.outdir, iter, args.Threads, args.outdir, iter)
+            - &> /dev/null'%(smt_cmd, outdir, iter, threads, outdir, iter)
     os.system(cmd1)
     os.system(cmd2)
 
-def align_rate(iter):
-    with open('%s/tmp/iter%s.btstats.txt'%(args.outdir,iter), 'r') as fh:
+def align_rate(iter, outdir):
+    with open('%s/tmp/iter%s.btstats.txt'%(outdir,iter), 'r') as fh:
         bt2str = fh.read()
         m = re.search('(\d+\.\d+)\% overall alignment rate', bt2str)
         alnrt = m.group(1)
         return(float(alnrt))
 
-def rmdup(iter):
+def rmdup(pic_cmd, iter, outdir):
     cmd = '%s MarkDuplicates \
             CREATE_INDEX=true \
             USE_JDK_DEFLATER=true \
@@ -58,41 +58,41 @@ def rmdup(iter):
             I=%s/tmp/iter%s.bam \
             O=%s/tmp/iter%s.rmdup.bam \
             REMOVE_DUPLICATES=true \
-            VALIDATION_STRINGENCY=LENIENT &> /dev/null'%(picard_cmd, args.outdir, iter, args.outdir, iter, args.outdir, iter)
+            VALIDATION_STRINGENCY=LENIENT &> /dev/null'%(pic_cmd, outdir, iter, outdir, iter, outdir, iter)
     os.system(cmd)
 
 
-def call_variants(ref, iter):
+def call_variants(gt_cmd, smt_cmd, ref, iter, xmx, outdir):
     refname = '.'.join(ref.split('.')[:-1])
-    cmd1 = "samtools faidx %s"%ref
-    cmd2 = "samtools dict %s > %s.dict"%(ref,refname)
+    cmd1 = "%s faidx %s"%(smt_cmd, ref)
+    cmd2 = "%s dict %s > %s.dict"%(smt_cmd,ref,refname)
     cmd3 = "%s --java-options '-Xmx%sg' HaplotypeCaller  \
        --use-jdk-deflater --use-jdk-inflater \
        -R %s \
        -I %s/tmp/iter%s.rmdup.bam \
        -O %s/tmp/iter%s.vcf \
        --min-base-quality-score 20 \
-       -ploidy 1 &> /dev/null"%(gatk_cmd, args.xmx, ref, args.outdir, iter, args.outdir, iter)
+       -ploidy 1 &> /dev/null"%(gt_cmd, xmx, ref, outdir, iter, outdir, iter)
     os.system(cmd1)
     os.system(cmd2)
     os.system(cmd3)
 
-def consensus(ref,iter,vcf):
+def consensus(ref,iter,vcf, outdir):
     cmd1 = "%s IndexFeatureFile -I %s &> /dev/null"%(gatk_cmd, vcf)
     cmd2 = "%s FastaAlternateReferenceMaker \
        -R %s \
        -O %s/tmp/consensus.iter%s.tmpnames.fa \
-       -V %s &> /dev/null"%(gatk_cmd,ref,args.outdir,iter,vcf)
+       -V %s &> /dev/null"%(gatk_cmd,ref,outdir,iter,vcf)
     os.system(cmd1)
     os.system(cmd2)
 
-def select_snps(ref,iter):
+def select_snps(ref,iter, outdir):
     cmd = "%s SelectVariants \
         --use-jdk-deflater --use-jdk-inflater \
         -R %s \
         -V %s/tmp/iter%s.vcf \
         -select-type SNP \
-        -O %s/tmp/iter%s.snps.vcf &> /dev/null"%(gatk_cmd,ref,args.outdir,iter,args.outdir,iter)
+        -O %s/tmp/iter%s.snps.vcf &> /dev/null"%(gatk_cmd,ref,outdir,iter,outdir,iter)
     os.system(cmd)
 
 def rename(consensus,ref,outfasta):
@@ -107,15 +107,12 @@ def rename(consensus,ref,outfasta):
         count+=1
     new.write(fasta)
 
-# SRR8525886_amplicons_refined_ref/SRR8525886_amplicons.updated_reference.fa
-# ../refs/HIV_B.K03455.HXB2.amplicons.fasta
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='ConsIter produces an updated reference genome that more closely matches the sequenced viral population by iteratively mapping reads to the reference and generating a new consensus sequence.')
     parser.add_argument('-ref', dest = 'ref', type = str, required=True,  help = 'Path to reference genome')
     parser.add_argument('-n', dest = 'name', type = str, required=True,  help = 'Sample name')
-    parser.add_argument('-o', dest = 'outdir', type = str, required=True,  help = 'Output directory')
+    parser.add_argument('-o', dest = 'outdir', type = str, required=True,  default=".", help = 'Output directory. Default is the current directory')
     parser.add_argument('-1', dest= 'Left', type = str, required=True, help ='Left reads file in fastq format')
     parser.add_argument('-2', dest= 'Right', type = str, required=True, help ='Right reads file in fastq format')
     parser.add_argument('-i', dest= 'maxIter', type=int, default= 5, help ='Maximum number of iterations. Default = 5')
@@ -182,52 +179,52 @@ if __name__ == "__main__":
         elif iteration == 0:
             print("Iteration %s"%iteration)
             print("Indexing reference")
-            run_bowtie2_idx(args.ref)
+            run_bowtie2_idx(bowtie2_cmd,args.ref)
             print("Mapping reads")
-            run_bowtie2(args.ref, iteration)
-            alnrate = align_rate(iteration)
+            run_bowtie2(bowtie2_cmd, samtools_cmd, args.ref, iteration, args.Threads, args.name, args.Left, args.Right, args.outdir)
+            alnrate = align_rate(iteration, args.outdir)
             print("Removing duplicates")
-            rmdup(iteration)
+            rmdup(picard_cmd,iteration, args.outdir)
             print("Iteration %s alignment rate: %s"%(iteration,alnrate))
             print("Calling variants")
-            call_variants(args.ref,iteration)
+            call_variants(gatk_cmd, samtools_cmd, args.ref,iteration, args.xmx, args.outdir)
             if args.noindel:
                 print("Generating updated reference")
-                select_snps(args.ref,iteration)
-                consensus(args.ref,iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration))
+                select_snps(args.ref,iteration, args.outdir)
+                consensus(args.ref,iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration), args.outdir)
                 rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                 iteration +=1
             else:
                 print("Generating updated reference")
-                consensus(args.ref,iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration))
+                consensus(args.ref,iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration), args.outdir)
                 rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                 iteration +=1
         else:
             #map to updated reference and check if alignment rate is better than last iteration
             print("Iteration %s"%iteration)
             print("Indexing updated reference")
-            run_bowtie2_idx("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)))
+            run_bowtie2_idx(bowtie2_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)))
             print("Mapping reads")
-            run_bowtie2("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration)
-            alnrate_last = align_rate(iteration-1)
-            alnrate = align_rate(iteration)
+            run_bowtie2(bowtie2_cmd, samtools_cmd, "%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.Threads, args.name, args.Left, args.Right, args.outdir)
+            alnrate_last = align_rate(iteration-1, args.outdir)
+            alnrate = align_rate(iteration, args.outdir)
             print("Iteration %s alignment rate: %s"%((iteration-1),alnrate_last))
             print("Iteration %s alignment rate: %s"%(iteration,alnrate))
             if alnrate > alnrate_last:
                 print("Iteration %s alignment rate better than previous iteration"%(iteration))
                 print("Removing duplicates")
-                rmdup(iteration)
+                rmdup(picard_cmd,iteration, args.outdir)
                 print("Calling variants")
-                call_variants("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration)
+                call_variants(gatk_cmd, samtools_cmd, "%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.xmx, args.outdir)
                 if args.noindel:
                     print("Generating updated reference")
-                    select_snps("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration)
-                    consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration))
+                    select_snps("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.outdir)
+                    consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration), args.outdir)
                     rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                     iteration +=1
                 else:
                     print("Generating updated reference")
-                    consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration))
+                    consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration), args.outdir)
                     rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                     iteration +=1
             else:
