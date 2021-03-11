@@ -16,7 +16,8 @@ picard_cmd = "java -jar ${EBROOTPICARD}/picard.jar"
 ######################################################
 
 def run_bowtie2_idx(bt2_cmd,ref_fasta):
-    cmd = '%s-build -q %s %s &> /dev/null' % (bt2_cmd, ref_fasta, ref_fasta)
+    cmd = '%s-build -q %s %s \
+            &> /dev/null' % (bt2_cmd, ref_fasta, ref_fasta)
     os.system(cmd)
 
 def run_bowtie2(bt2_cmd, smt_cmd, ref, iter, threads, name, left, right, outdir):
@@ -32,9 +33,12 @@ def run_bowtie2(bt2_cmd, smt_cmd, ref, iter, threads, name, left, right, outdir)
             -x %s  \
             -1 %s \
             -2 %s \
-            -S %s/tmp/iter%s.sam 2> %s/tmp/iter%s.btstats.txt'%(bt2_cmd, threads, name, name, ref, left, right, outdir, iter, outdir, iter)
+            -S %s/tmp/iter%s.sam \
+            2> %s/tmp/iter%s.btstats.txt'%(bt2_cmd, threads, name, name, ref, left, right, outdir, iter, outdir, iter)
     #convert to sorted bam
     cmd2 = '%s view -bh \
+            -f 0x2 \
+            -q 20 \
             %s/tmp/iter%s.sam | \
             samtools sort -@ %s\
             -o %s/tmp/iter%s.bam \
@@ -58,11 +62,12 @@ def rmdup(pic_cmd, iter, outdir):
             I=%s/tmp/iter%s.bam \
             O=%s/tmp/iter%s.rmdup.bam \
             REMOVE_DUPLICATES=true \
-            VALIDATION_STRINGENCY=LENIENT &> /dev/null'%(pic_cmd, outdir, iter, outdir, iter, outdir, iter)
+            VALIDATION_STRINGENCY=LENIENT \
+            &> /dev/null'%(pic_cmd, outdir, iter, outdir, iter, outdir, iter)
     os.system(cmd)
 
 
-def call_variants(gt_cmd, smt_cmd, ref, iter, xmx, outdir):
+def call_variants(gt_cmd, smt_cmd, ref, iter, xmx, outdir, ploidy):
     refname = '.'.join(ref.split('.')[:-1])
     cmd1 = "%s faidx %s"%(smt_cmd, ref)
     cmd2 = "%s dict %s > %s.dict"%(smt_cmd,ref,refname)
@@ -72,27 +77,30 @@ def call_variants(gt_cmd, smt_cmd, ref, iter, xmx, outdir):
        -I %s/tmp/iter%s.rmdup.bam \
        -O %s/tmp/iter%s.vcf \
        --min-base-quality-score 20 \
-       -ploidy 1 &> /dev/null"%(gt_cmd, xmx, ref, outdir, iter, outdir, iter)
+       -ploidy %s \
+       &> /dev/null"%(gt_cmd, xmx, ref, outdir, iter, outdir, iter, ploidy)
     os.system(cmd1)
     os.system(cmd2)
     os.system(cmd3)
 
-def consensus(ref,iter,vcf, outdir):
-    cmd1 = "%s IndexFeatureFile -I %s &> /dev/null"%(gatk_cmd, vcf)
+def consensus(gt_cmd,ref,iter,vcf, outdir):
+    cmd1 = "%s IndexFeatureFile -I %s &> /dev/null"%(gt_cmd, vcf)
     cmd2 = "%s FastaAlternateReferenceMaker \
        -R %s \
        -O %s/tmp/consensus.iter%s.tmpnames.fa \
-       -V %s &> /dev/null"%(gatk_cmd,ref,outdir,iter,vcf)
+       -V %s \
+       &> /dev/null"%(gt_cmd,ref,outdir,iter,vcf)
     os.system(cmd1)
     os.system(cmd2)
 
-def select_snps(ref,iter, outdir):
+def select_snps(gt_cmd, ref,iter, outdir):
     cmd = "%s SelectVariants \
         --use-jdk-deflater --use-jdk-inflater \
         -R %s \
-        -V %s/tmp/iter%s.vcf \
+        -V %s/tmp/iter%s.filt.vcf \
         -select-type SNP \
-        -O %s/tmp/iter%s.snps.vcf &> /dev/null"%(gatk_cmd,ref,outdir,iter,outdir,iter)
+        -O %s/tmp/iter%s.snps.vcf &> \
+        /dev/null"%(gt_cmd,ref,outdir,iter,outdir,iter)
     os.system(cmd)
 
 def rename(consensus,ref,outfasta):
@@ -107,6 +115,20 @@ def rename(consensus,ref,outfasta):
         count+=1
     new.write(fasta)
 
+def filter_variants(gt_cmd, ref, iter, outdir):
+    cmd = '%s VariantFiltration \
+        -R %s \
+        -V %s/tmp/iter%s.vcf \
+        -O %s/tmp/iter%s.filt.vcf \
+        -filter-name "DP_filter" -filter "DP < 20.0" \
+        -filter-name "QD_filter" -filter "QD < 2.0" \
+        -filter-name "FS_filter" -filter "FS > 60.0" \
+        -filter-name "MQ_filter" -filter "MQ < 40.0" \
+        -filter-name "ReadPosRankSum_filter" -filter "ReadPosRankSum < -8.0" \
+        -filter-name "SOR_filter" -filter "SOR > 3.0" \
+        &> /dev/null'%(gt_cmd,ref,outdir,iter,outdir,iter)
+    os.system(cmd)
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='ConsIter produces an updated reference genome that more closely matches the sequenced viral population by iteratively mapping reads to the reference and generating a new consensus sequence.')
@@ -117,6 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('-2', dest= 'Right', type = str, required=True, help ='Right reads file in fastq format')
     parser.add_argument('-i', dest= 'maxIter', type=int, default= 5, help ='Maximum number of iterations. Default = 5')
     parser.add_argument('-t', dest= 'Threads', type = int, default= 16, help ='Number of threads to use. Default = 16')
+    parser.add_argument('-p', dest= 'ploidy', type = int, default= 1, help ='Sample ploidy used for GATK HaplotypeCaller. Default = 1')
     parser.add_argument('-xmx', dest= 'xmx', type = int, default= 50, help ='Maximum heap size for Java VM, in GB. Default = 50')
     parser.add_argument('--keep',dest= 'keep', action='store_true',help ='Keep temporary directory')
     parser.add_argument('--noindel',dest= 'noindel', action='store_true',help ='Do not introduce insertions and deletions into new reference')
@@ -187,16 +210,17 @@ if __name__ == "__main__":
             rmdup(picard_cmd,iteration, args.outdir)
             print("Iteration %s alignment rate: %s"%(iteration,alnrate))
             print("Calling variants")
-            call_variants(gatk_cmd, samtools_cmd, args.ref,iteration, args.xmx, args.outdir)
+            call_variants(gatk_cmd, samtools_cmd, args.ref,iteration, args.xmx, args.outdir, args.ploidy)
+            filter_variants(gatk_cmd,args.ref,iteration,args.outdir)
             if args.noindel:
                 print("Generating updated reference")
-                select_snps(args.ref,iteration, args.outdir)
-                consensus(args.ref,iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration), args.outdir)
+                select_snps(gatk_cmd, args.ref,iteration, args.outdir)
+                consensus(gatk_cmd, args.ref,iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration), args.outdir)
                 rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                 iteration +=1
             else:
                 print("Generating updated reference")
-                consensus(args.ref,iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration), args.outdir)
+                consensus(gatk_cmd,args.ref,iteration,"%s/tmp/iter%s.filt.vcf"%(args.outdir,iteration), args.outdir)
                 rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                 iteration +=1
         else:
@@ -215,16 +239,17 @@ if __name__ == "__main__":
                 print("Removing duplicates")
                 rmdup(picard_cmd,iteration, args.outdir)
                 print("Calling variants")
-                call_variants(gatk_cmd, samtools_cmd, "%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.xmx, args.outdir)
+                call_variants(gatk_cmd, samtools_cmd, "%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.xmx, args.outdir, args.ploidy)
+                filter_variants(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,args.outdir)
                 if args.noindel:
                     print("Generating updated reference")
-                    select_snps("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.outdir)
-                    consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration), args.outdir)
+                    select_snps(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.outdir)
+                    consensus(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration), args.outdir)
                     rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                     iteration +=1
                 else:
                     print("Generating updated reference")
-                    consensus("%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.vcf"%(args.outdir,iteration), args.outdir)
+                    consensus(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.filt.vcf"%(args.outdir,iteration), args.outdir)
                     rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
                     iteration +=1
             else:
