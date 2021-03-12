@@ -187,14 +187,17 @@ if __name__ == "__main__":
         if iteration == args.maxIter:
             print("Iteration %s"%iteration)
             print("Maximum number of iterations reached. Terminating.")
-            print("Updated reference genome is in %s/%s.updated_reference.fa"%(args.outdir,args.name))
-            cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.updated_reference.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+            print("Updated reference genome is in %s/%s.consensus.fa"%(args.outdir,args.name))
+            cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd1)
             print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
             cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd2)
             cmd3 = ("mv %s/tmp/iter%s.rmdup.bai %s/%s.bt2.rmdup.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd3)
+            print("Filtered VCF file is in %s/%s.filt.vcf"%(args.outdir,args.name))
+            cmd4 = ("mv %s/tmp/iter%s.filt.vcf %s/%s.filt.vcf"%(args.outdir,(iteration-1),args.outdir,args.name))
+            os.system(cmd4)
             if not args.keep:
                 os.system('rm -rf %s/tmp'%args.outdir)
             iteration +=1
@@ -211,6 +214,7 @@ if __name__ == "__main__":
             print("Iteration %s alignment rate: %s"%(iteration,alnrate))
             print("Calling variants")
             call_variants(gatk_cmd, samtools_cmd, args.ref,iteration, args.xmx, args.outdir, args.ploidy)
+            print("Filtering variants")
             filter_variants(gatk_cmd,args.ref,iteration,args.outdir)
             if args.noindel:
                 print("Generating updated reference")
@@ -240,6 +244,7 @@ if __name__ == "__main__":
                 rmdup(picard_cmd,iteration, args.outdir)
                 print("Calling variants")
                 call_variants(gatk_cmd, samtools_cmd, "%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.xmx, args.outdir, args.ploidy)
+                print("Filtering variants")
                 filter_variants(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,args.outdir)
                 if args.noindel:
                     print("Generating updated reference")
@@ -255,14 +260,17 @@ if __name__ == "__main__":
             else:
                 print("No improvement in alignment rate")
                 print("Generating final consensus sequence and bam file")
-                print("Updated reference genome is in %s/%s.updated_reference.fa"%(args.outdir,args.name))
-                cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.updated_reference.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+                print("Updated reference genome is in %s/%s.consensus.fa"%(args.outdir,args.name))
+                cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd1)
                 print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
                 cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd2)
                 cmd3 = ("mv %s/tmp/iter%s.rmdup.bai %s/%s.bt2.rmdup.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd3)
+                print("Filtered VCF file is in %s/%s.filt.vcf"%(args.outdir,args.name))
+                cmd4 = ("mv %s/tmp/iter%s.filt.vcf %s/%s.filt.vcf"%(args.outdir,(iteration-1),args.outdir,args.name))
+                os.system(cmd4)
                 if not args.keep:
                     os.system('rm -rf %s/tmp'%args.outdir)
                 break
