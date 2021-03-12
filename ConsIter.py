@@ -76,9 +76,10 @@ def call_variants(gt_cmd, smt_cmd, ref, iter, xmx, outdir, ploidy):
        -R %s \
        -I %s/tmp/iter%s.rmdup.bam \
        -O %s/tmp/iter%s.vcf \
+       -bamout %s/tmp/iter%s.final.bam \
        --min-base-quality-score 20 \
        -ploidy %s \
-       &> /dev/null"%(gt_cmd, xmx, ref, outdir, iter, outdir, iter, ploidy)
+       &> /dev/null"%(gt_cmd, xmx, ref, outdir, iter, outdir, iter, outdir, iter, ploidy)
     os.system(cmd1)
     os.system(cmd2)
     os.system(cmd3)
@@ -188,16 +189,24 @@ if __name__ == "__main__":
             print("Iteration %s"%iteration)
             print("Maximum number of iterations reached. Terminating.")
             print("Updated reference genome is in %s/%s.consensus.fa"%(args.outdir,args.name))
-            cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+            cmd1 = ("cp %s/tmp/consensus.iter%s.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd1)
-            print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
-            cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
+            print("Duplicate-removed, indel-realigned bam file is in %s/%s.bt2.final.bam"%(args.outdir,args.name))
+            cmd2 = ("cp %s/tmp/iter%s.final.bam %s/%s.bt2.final.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd2)
-            cmd3 = ("mv %s/tmp/iter%s.rmdup.bai %s/%s.bt2.rmdup.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
+            cmd3 = ("cp %s/tmp/iter%s.final.bai %s/%s.bt2.final.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd3)
-            print("Filtered VCF file is in %s/%s.filt.vcf"%(args.outdir,args.name))
-            cmd4 = ("mv %s/tmp/iter%s.filt.vcf %s/%s.filt.vcf"%(args.outdir,(iteration-1),args.outdir,args.name))
-            os.system(cmd4)
+            if iteration == 1:
+                print("Filtered VCF file against reference genome is in %s/%s.ref.filt.vcf"%(args.outdir,args.name))
+                cmd4 = ("cp %s/tmp/iter%s.filt.vcf %s/%s.ref.filt.vcf"%(args.outdir,(iteration-1),args.outdir,args.name))
+                os.system(cmd4)
+            else:
+                print("Filtered VCF file against reference genome is in %s/%s.ref.filt.vcf"%(args.outdir,args.name))
+                cmd4 = ("cp %s/tmp/iter0.filt.vcf %s/%s.ref.filt.vcf"%(args.outdir,args.outdir,args.name))
+                os.system(cmd4)
+                print("Filtered VCF file against consensus sequence is in %s/%s.consensus.filt.vcf"%(args.outdir,args.name))
+                cmd5 = ("cp %s/tmp/iter0.filt.vcf %s/%s.consensus.filt.vcf"%(args.outdir,args.outdir,args.name))
+                os.system(cmd5)
             if not args.keep:
                 os.system('rm -rf %s/tmp'%args.outdir)
             iteration +=1
@@ -261,16 +270,24 @@ if __name__ == "__main__":
                 print("No improvement in alignment rate")
                 print("Generating final consensus sequence and bam file")
                 print("Updated reference genome is in %s/%s.consensus.fa"%(args.outdir,args.name))
-                cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+                cmd1 = ("cp %s/tmp/consensus.iter%s.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd1)
-                print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
-                cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
+                print("Duplicate-removed, indel-realigned bam file is in %s/%s.bt2.final.bam"%(args.outdir,args.name))
+                cmd2 = ("cp %s/tmp/iter%s.final.bam %s/%s.bt2.final.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd2)
-                cmd3 = ("mv %s/tmp/iter%s.rmdup.bai %s/%s.bt2.rmdup.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
+                cmd3 = ("cp %s/tmp/iter%s.final.bai %s/%s.bt2.final.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd3)
-                print("Filtered VCF file is in %s/%s.filt.vcf"%(args.outdir,args.name))
-                cmd4 = ("mv %s/tmp/iter%s.filt.vcf %s/%s.filt.vcf"%(args.outdir,(iteration-1),args.outdir,args.name))
-                os.system(cmd4)
+                if iteration == 1:
+                    print("Filtered VCF file against reference genome is in %s/%s.ref.filt.vcf"%(args.outdir,args.name))
+                    cmd4 = ("cp %s/tmp/iter%s.filt.vcf %s/%s.ref.filt.vcf"%(args.outdir,(iteration-1),args.outdir,args.name))
+                    os.system(cmd4)
+                else:
+                    print("Filtered VCF file against reference genome is in %s/%s.ref.filt.vcf"%(args.outdir,args.name))
+                    cmd4 = ("cp %s/tmp/iter0.filt.vcf %s/%s.ref.filt.vcf"%(args.outdir,args.outdir,args.name))
+                    os.system(cmd4)
+                    print("Filtered VCF file against consensus sequence is in %s/%s.consensus.filt.vcf"%(args.outdir,args.name))
+                    cmd5 = ("cp %s/tmp/iter0.filt.vcf %s/%s.consensus.filt.vcf"%(args.outdir,args.outdir,args.name))
+                    os.system(cmd5)
                 if not args.keep:
                     os.system('rm -rf %s/tmp'%args.outdir)
                 break
