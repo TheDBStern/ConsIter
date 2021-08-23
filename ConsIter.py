@@ -11,8 +11,8 @@ import sys
 ######################################################
 bowtie2_cmd = "bowtie2"
 samtools_cmd = "samtools"
-gatk_cmd = "$EBROOTGATK/gatk"
-picard_cmd = "java -jar ${EBROOTPICARD}/picard.jar"
+gatk_cmd = "gatk"
+picard_cmd = "picard"
 ######################################################
 
 def run_bowtie2_idx(bt2_cmd,ref_fasta):
