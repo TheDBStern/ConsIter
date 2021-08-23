@@ -10,3 +10,9 @@ Please update the python script to specify your system path for bowtie2, picard,
 Help menu is available by typing: `ConsIter.py -h`
 
 Currently, this script is able to add insertions and deletion to the updated reference causing positional mismatches between the original and updated reference. To disable with behavior, use the flag `--noindel`
+
+To install the appropriate packages in a conda environment, run 
+```
+conda create -n ConsIter bowtie2=2.4.4-0 gatk4=4.2.2.0-0 picard=2.26.0-0 samtools=1.13-0
+conda activate ConsIter
+```
