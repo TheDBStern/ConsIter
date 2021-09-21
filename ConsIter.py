@@ -13,6 +13,7 @@ bowtie2_cmd = "bowtie2"
 samtools_cmd = "samtools"
 gatk_cmd = "gatk"
 picard_cmd = "picard"
+bedtools_cmd = "bedtools"
 ######################################################
 
 def run_bowtie2_idx(bt2_cmd,ref_fasta):
@@ -111,7 +112,7 @@ def rename_sname(consensus,ref,outfasta,sample):
     count=1
     for line in refdict:
         name = line.split('\t')[1].replace("SN:","")
-        fasta = fasta.replace(">%s"%count, ">%s|%s"%(sample,name))
+        fasta = fasta.replace(">", ">%s|%s"%(sample,name))
         count+=1
     new.write(fasta)
 
@@ -141,6 +142,20 @@ def filter_variants(gt_cmd, ref, iter, outdir):
         &> /dev/null'%(gt_cmd,ref,outdir,iter,outdir,iter)
     os.system(cmd)
 
+def mask_fasta(bt_cmd, ref, cov, bam, out):
+    cmd1 = '''%s genomecov \
+            -ibam %s \
+            -bga | \
+            awk -v threshold=%s '$4<threshold' | \
+            awk '{print $1 "\t" $2 "\t" $3}' \
+            > masked_bases.bed'''%(bt_cmd, bam, cov)
+    cmd2 = "%s maskfasta \
+            -fi %s \
+            -bed masked_bases.bed \
+            -fo %s"%(bt_cmd, ref, out)
+    os.system(cmd1)
+    os.system(cmd2)
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='ConsIter produces an updated reference genome that more closely matches the sequenced viral population by iteratively mapping reads to the reference and generating a new consensus sequence.')
@@ -152,6 +167,7 @@ if __name__ == "__main__":
     parser.add_argument('-i', dest= 'maxIter', type=int, default= 5, help ='Maximum number of iterations. Default = 5')
     parser.add_argument('-t', dest= 'Threads', type = int, default= 16, help ='Number of threads to use. Default = 16')
     parser.add_argument('-p', dest= 'ploidy', type = int, default= 1, help ='Sample ploidy used for GATK HaplotypeCaller. Default = 1')
+    parser.add_argument('-c', dest= 'cov', type = int, default= 20, help ='Minimum coverage under which to mask bases in the final consensus. Default = 20')
     parser.add_argument('-xmx', dest= 'xmx', type = int, default= 50, help ='Maximum heap size for Java VM, in GB. Default = 50')
     parser.add_argument('--keep',dest= 'keep', action='store_true',help ='Keep temporary directory')
     parser.add_argument('--noindel',dest= 'noindel', action='store_true',help ='Do not introduce insertions and deletions into new reference')
@@ -170,6 +186,8 @@ if __name__ == "__main__":
         print(sys.exit("Could not find bowtie2 command. Adjust python script or load module"))
     if shutil.which(samtools_cmd) == None:
         print(sys.exit("Could not find Samtools command. Adjust python script or load module"))
+    if shutil.which(bedtools_cmd) == None:
+        print(sys.exit("Could not find Bedtools command. Adjust python script or load module"))
     gatk_stat = subprocess.getstatusoutput(gatk_cmd)
     gatk_m = re.search("Usage", str(gatk_stat[1]))
     if gatk_m == None:
@@ -198,13 +216,14 @@ if __name__ == "__main__":
         #reached last iteration
         if iteration == args.maxIter:
             print("Iteration %s"%iteration)
-            print("Maximum number of iterations reached. Terminating.")
-            rename_sname('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration-1),args.ref,'%s/tmp/consensus.iter%s.sample_name.fa'%(args.outdir,iteration-1),args.name)
-            cmd0 = ("mv %s/tmp/consensus.iter%s.sample_name.fa %s/%s.consensus.sample_name.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+            print("Maximum number of iterations reached. Masking final consensus and terminating.")
+            mask_fasta(bedtools_cmd, '%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration-1), args.cov, '%s/tmp/iter%s.rmdup.bam'%(args.outdir,(iteration-1)), '%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1))
+            rename_sname('%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1),args.ref,'%s/tmp/consensus.iter%s.masked.sample_name.fa'%(args.outdir,iteration-1),args.name)
+            cmd0 = ("mv %s/tmp/consensus.iter%s.masked.sample_name.fa %s/%s.consensus.sample_name.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd0)
-            print("Updated reference genome is in %s/%s.consensus.fa"%(args.outdir,args.name))
+            print("Updated reference genome with bases < %s coverage masked is in %s/%s.consensus.fa"%(args.cov, args.outdir,args.name))
             print("%s/%s.consensus.sample_name.fa includes sample name in fasta line"%(args.outdir,args.name))
-            cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+            cmd1 = ("mv %s/tmp/consensus.iter%s.masked.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd1)
             print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
             cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
@@ -276,12 +295,13 @@ if __name__ == "__main__":
             else:
                 print("No improvement in alignment rate")
                 print("Generating final consensus sequence and bam file")
-                rename_sname('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration-1),args.ref,'%s/tmp/consensus.iter%s.sample_name.fa'%(args.outdir,iteration-1),args.name)
-                cmd0 = ("mv %s/tmp/consensus.iter%s.sample_name.fa %s/%s.consensus.sample_name.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+                mask_fasta(bedtools_cmd, '%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration-1), args.cov, '%s/tmp/iter%s.rmdup.bam'%(args.outdir,(iteration-1)), '%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1))
+                rename_sname('%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1),args.ref,'%s/tmp/consensus.iter%s.masked.sample_name.fa'%(args.outdir,iteration-1),args.name)
+                cmd0 = ("mv %s/tmp/consensus.iter%s.masked.sample_name.fa %s/%s.consensus.sample_name.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd0)
-                print("Updated reference genome is in %s/%s.consensus.fa"%(args.outdir,args.name))
+                print("Updated reference genome with bases < %s coverage masked is in %s/%s.consensus.fa"%(args.cov, args.outdir,args.name))
                 print("%s/%s.consensus.sample_name.fa includes sample name in fasta line"%(args.outdir,args.name))
-                cmd1 = ("mv %s/tmp/consensus.iter%s.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
+                cmd1 = ("mv %s/tmp/consensus.iter%s.masked.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd1)
                 print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
                 cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
