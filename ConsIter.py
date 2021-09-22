@@ -142,17 +142,17 @@ def filter_variants(gt_cmd, ref, iter, outdir):
         &> /dev/null'%(gt_cmd,ref,outdir,iter,outdir,iter)
     os.system(cmd)
 
-def mask_fasta(bt_cmd, ref, cov, bam, out):
+def mask_fasta(bt_cmd, ref, cov, bam, outfasta, outbed):
     cmd1 = '''%s genomecov \
             -ibam %s \
             -bga | \
             awk -v threshold=%s '$4<threshold' | \
             awk '{print $1 "\t" $2 "\t" $3}' \
-            > masked_bases.bed'''%(bt_cmd, bam, cov)
+            > %s'''%(bt_cmd, bam, cov, outbed)
     cmd2 = "%s maskfasta \
             -fi %s \
-            -bed masked_bases.bed \
-            -fo %s"%(bt_cmd, ref, out)
+            -bed %s \
+            -fo %s"%(bt_cmd, ref, outbed, outfasta)
     os.system(cmd1)
     os.system(cmd2)
 
@@ -217,7 +217,7 @@ if __name__ == "__main__":
         if iteration == args.maxIter:
             print("Iteration %s"%iteration)
             print("Maximum number of iterations reached. Masking final consensus and terminating.")
-            mask_fasta(bedtools_cmd, '%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration-1), args.cov, '%s/tmp/iter%s.rmdup.bam'%(args.outdir,(iteration-1)), '%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1))
+            mask_fasta(bedtools_cmd, '%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration-1), args.cov, '%s/tmp/iter%s.rmdup.bam'%(args.outdir,(iteration-1)), '%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1), '%s/tmp/consensus.iter%s.masked_sites.bed'%(args.outdir,iteration-1))
             rename_sname('%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1),args.ref,'%s/tmp/consensus.iter%s.masked.sample_name.fa'%(args.outdir,iteration-1),args.name)
             cmd0 = ("mv %s/tmp/consensus.iter%s.masked.sample_name.fa %s/%s.consensus.sample_name.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
             os.system(cmd0)
@@ -295,7 +295,7 @@ if __name__ == "__main__":
             else:
                 print("No improvement in alignment rate")
                 print("Generating final consensus sequence and bam file")
-                mask_fasta(bedtools_cmd, '%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration-1), args.cov, '%s/tmp/iter%s.rmdup.bam'%(args.outdir,(iteration-1)), '%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1))
+                mask_fasta(bedtools_cmd, '%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration-1), args.cov, '%s/tmp/iter%s.rmdup.bam'%(args.outdir,(iteration-1)), '%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1), '%s/tmp/consensus.iter%s.masked_sites.bed'%(args.outdir,iteration-1))
                 rename_sname('%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1),args.ref,'%s/tmp/consensus.iter%s.masked.sample_name.fa'%(args.outdir,iteration-1),args.name)
                 cmd0 = ("mv %s/tmp/consensus.iter%s.masked.sample_name.fa %s/%s.consensus.sample_name.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
                 os.system(cmd0)
