@@ -1,4 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
+"""ConsIter produces an updated reference genome that more
+closely matches the sequenced viral population by iteratively
+mapping reads to the reference and generating a new consensus sequence.
+"""
 
 import argparse
 import subprocess
@@ -9,140 +14,171 @@ import sys
 
 # set base commands for software on your system
 ######################################################
-bowtie2_cmd = "bowtie2"
-samtools_cmd = "samtools"
-gatk_cmd = "gatk"
-picard_cmd = "picard"
-bedtools_cmd = "bedtools"
+BOWTIE2_CMD = "bowtie2"
+SAMTOOLS_CMD = "samtools"
+GATK_CMD = "gatk"
+PICARD_CMD = "picard"
+BEDTOOLS_CMD = "bedtools"
 ######################################################
 
 def run_bowtie2_idx(bt2_cmd,ref_fasta):
-    cmd = '%s-build -q %s %s \
-            &> /dev/null' % (bt2_cmd, ref_fasta, ref_fasta)
+    """Index the reference with bowtie2"""
+    cmd = (
+        f"{bt2_cmd}-build -q {ref_fasta} {ref_fasta} "
+        f"&> /dev/null"
+        )
     os.system(cmd)
 
-def run_bowtie2(bt2_cmd, smt_cmd, ref, iter, threads, name, left, right, outdir):
-    #run bowtie2 and collect alignment stats
-    cmd1 = '%s -p %s \
-            --no-unal \
-            --rg-id %s\
-            --rg SM:%s \
-            --rg LB:1 \
-            --rg PU:1 \
-            --rg PL:illumina \
-            --sensitive-local \
-            -x %s  \
-            -1 %s \
-            -2 %s \
-            -S %s/tmp/iter%s.sam \
-            2> %s/tmp/iter%s.btstats.txt'%(bt2_cmd, threads, name, name, ref, left, right, outdir, iter, outdir, iter)
+def run_bowtie2(bt2_cmd, smt_cmd, ref, i, threads, name, left, right, outdir):
+    """run bowtie2 and collect alignment stats"""
+    cmd1 = (
+            f"{bt2_cmd} -p {threads} "
+            f"--no-unal "
+            f"--rg-id {name} "
+            f"--rg SM:{name} "
+            f"--rg LB:1 "
+            f"--rg PU:1 "
+            f"--rg PL:illumina "
+            f"--sensitive-local "
+            f"-x {ref} "
+            f"-1 {left} "
+            f"-2 {right} "
+            f"-S {outdir}/tmp/iter{i}.sam "
+            f"2> {outdir}/tmp/iter{i}.btstats.txt"
+        )
     #convert to sorted bam
-    cmd2 = '%s view -bh \
-            -f 0x2 \
-            -q 20 \
-            %s/tmp/iter%s.sam | \
-            samtools sort -@ %s\
-            -o %s/tmp/iter%s.bam \
-            - &> /dev/null'%(smt_cmd, outdir, iter, threads, outdir, iter)
+    cmd2 = (
+        f"{smt_cmd} view -bh "
+        f"-f 0x2 "
+        f"-q 20 "
+        f"{outdir}/tmp/iter{i}.sam | "
+        f"samtools sort -@ {threads} "
+        f"-o {outdir}/tmp/iter{i}.bam "
+        f"- &> /dev/null"
+        )
     os.system(cmd1)
     os.system(cmd2)
 
-def align_rate(iter, outdir):
-    with open('%s/tmp/iter%s.btstats.txt'%(outdir,iter), 'r') as fh:
+def align_rate(i, outdir):
+    """Collect alignment rate from bowtie2 output"""
+    with open(f"{outdir}/tmp/iter{i}.btstats.txt", "r", encoding="utf-8") as fh:
         bt2str = fh.read()
-        m = re.search('(\d+\.\d+)\% overall alignment rate', bt2str)
+        m = re.search(r'(\d+\.\d+)\% overall alignment rate', bt2str)
         alnrt = m.group(1)
-        return(float(alnrt))
+        return float(alnrt)
 
-def rmdup(pic_cmd, iter, outdir):
-    cmd = '%s MarkDuplicates \
-            CREATE_INDEX=true \
-            USE_JDK_DEFLATER=true \
-            USE_JDK_INFLATER=true \
-            M=%s/tmp/iter%s.rmdup_metrics.txt \
-            I=%s/tmp/iter%s.bam \
-            O=%s/tmp/iter%s.rmdup.bam \
-            REMOVE_DUPLICATES=true \
-            VALIDATION_STRINGENCY=LENIENT \
-            &> /dev/null'%(pic_cmd, outdir, iter, outdir, iter, outdir, iter)
+def rmdup(pic_cmd, i, outdir):
+    """Remove duplicates"""
+    cmd = (
+        f"{pic_cmd} MarkDuplicates "
+        f"CREATE_INDEX=true "
+        f"USE_JDK_DEFLATER=true "
+        f"USE_JDK_INFLATER=true "
+        f"M={outdir}/tmp/iter{i}.rmdup_metrics.txt "
+        f"I={outdir}/tmp/iter{i}.bam "
+        f"O={outdir}/tmp/iter{i}.rmdup.bam "
+        f"REMOVE_DUPLICATES=true "
+        f"VALIDATION_STRINGENCY=LENIENT "
+        f"&> /dev/null"
+        )
     os.system(cmd)
 
 
-def call_variants(gt_cmd, smt_cmd, ref, iter, xmx, outdir, ploidy):
+def call_variants(gt_cmd, smt_cmd, ref, i, xmx, outdir, ploidy):
+    """Call variants with GATK"""
     refname = '.'.join(ref.split('.')[:-1])
-    cmd1 = "%s faidx %s"%(smt_cmd, ref)
-    cmd2 = "%s dict %s > %s.dict"%(smt_cmd,ref,refname)
-    cmd3 = "%s --java-options '-Xmx%sg' HaplotypeCaller  \
-       --use-jdk-deflater --use-jdk-inflater \
-       -R %s \
-       -I %s/tmp/iter%s.rmdup.bam \
-       -O %s/tmp/iter%s.vcf \
-       --min-base-quality-score 20 \
-       -ploidy %s \
-       &> /dev/null"%(gt_cmd, xmx, ref, outdir, iter, outdir, iter, ploidy)
+    cmd1 = f"{smt_cmd} faidx {ref}"
+    cmd2 = f"{smt_cmd} dict {ref} > {refname}.dict"
+    cmd3 = (
+            f"{gt_cmd} --java-options '-Xmx{xmx}g' HaplotypeCaller "
+            f"--use-jdk-deflater --use-jdk-inflater "
+            f"-R {ref} "
+            f"-I {outdir}/tmp/iter{i}.rmdup.bam "
+            f"-O {outdir}/tmp/iter{i}.vcf "
+            f"--min-base-quality-score 20 "
+            f"-ploidy {ploidy} "
+            f"&> /dev/null"
+            )
     os.system(cmd1)
     os.system(cmd2)
     os.system(cmd3)
 
-def consensus(gt_cmd,ref,iter,vcf, outdir):
-    cmd1 = "%s IndexFeatureFile -I %s &> /dev/null"%(gt_cmd, vcf)
-    cmd2 = "%s FastaAlternateReferenceMaker \
-       -R %s \
-       -O %s/tmp/consensus.iter%s.tmpnames.fa \
-       -V %s \
-       &> /dev/null"%(gt_cmd,ref,outdir,iter,vcf)
+def gen_consensus(gt_cmd,ref,i,vcf, outdir):
+    """Generate the consensus sequence with GATK"""
+    cmd1 = f"{gt_cmd} IndexFeatureFile -I {vcf} &> /dev/null"
+    cmd2 = (
+        f"{gt_cmd} FastaAlternateReferenceMaker "
+        f"-R {ref} "
+        f"-O {outdir}/tmp/consensus.iter{i}.tmpnames.fa "
+        f"-V {vcf} "
+        f"&> /dev/null"
+       )
     os.system(cmd1)
     os.system(cmd2)
 
-def select_snps(gt_cmd, ref,iter, outdir):
-    cmd = "%s SelectVariants \
-        --use-jdk-deflater --use-jdk-inflater \
-        -R %s \
-        -V %s/tmp/iter%s.filt.vcf \
-        -select-type SNP \
-        -O %s/tmp/iter%s.snps.vcf &> \
-        /dev/null"%(gt_cmd,ref,outdir,iter,outdir,iter)
+def select_snps(gt_cmd, ref,i, outdir):
+    """Select only SNPs from the GATK VCF file"""
+    cmd = (
+        f"{gt_cmd} SelectVariants "
+        f"--use-jdk-deflater --use-jdk-inflater "
+        f"-R {ref} "
+        f"-V {outdir}/tmp/iter{i}.filt.vcf "
+        f"-select-type SNP "
+        f"-O {outdir}/tmp/iter{i}.snps.vcf &> /dev/null"
+        )
     os.system(cmd)
 
 def rename_sname(consensus,ref,outfasta,sample):
-    fasta = open(consensus, 'r').read()
-    new = open(outfasta,'w')
-    refdict = open('.'.join(ref.split('.')[:-1])+'.dict','r')
-    next(refdict)
-    count=1
-    for line in refdict:
-        name = line.split('\t')[1].replace("SN:","")
-        fasta = fasta.replace(">", ">%s|%s"%(sample,name))
-        count+=1
-    new.write(fasta)
+    """Rename the fasta headers with the sample name and reference name"""
+    with (
+    open(consensus, 'r', encoding="utf-8") as f,
+    open(outfasta,'w', encoding="utf-8") as new,
+    open('.'.join(ref.split('.')[:-1])+'.dict','r', encoding="utf-8") as refdict
+    ):
+        fasta = f.read()
+        next(refdict)
+        count=1
+        for line in refdict:
+            name = line.split('\t')[1].replace("SN:","")
+            fasta = fasta.replace(">", f">{sample}|{name}")
+            count+=1
+        new.write(fasta)
 
 def rename(consensus,ref,outfasta):
-    fasta = open(consensus, 'r').read()
-    new = open(outfasta,'w')
-    refdict = open('.'.join(ref.split('.')[:-1])+'.dict','r')
-    next(refdict)
-    count=1
-    for line in refdict:
-        name = line.split('\t')[1].replace("SN:","")
-        fasta = fasta.replace(">%s"%count, ">%s"%(name))
-        count+=1
-    new.write(fasta)
+    """Rename the sample readers with only the reference seq name"""
+    with (
+    open(consensus, 'r', encoding="utf-8") as f,
+    open(outfasta,'w', encoding="utf-8") as new,
+    open('.'.join(ref.split('.')[:-1])+'.dict','r', encoding="utf-8") as refdict
+    ):
+        fasta = f.read()
+        next(refdict)
+        count=1
+        for line in refdict:
+            name = line.split('\t')[1].replace("SN:","")
+            fasta = fasta.replace(f">{count}", f">{name}")
+            count+=1
+        new.write(fasta)
 
-def filter_variants(gt_cmd, ref, iter, outdir):
-    cmd = '%s VariantFiltration \
-        -R %s \
-        -V %s/tmp/iter%s.vcf \
-        -O %s/tmp/iter%s.filt.vcf \
-        -filter-name "DP_filter" -filter "DP < 20.0" \
-        -filter-name "QD_filter" -filter "QD < 2.0" \
-        -filter-name "FS_filter" -filter "FS > 60.0" \
-        -filter-name "MQ_filter" -filter "MQ < 40.0" \
-        -filter-name "ReadPosRankSum_filter" -filter "ReadPosRankSum < -8.0" \
-        -filter-name "SOR_filter" -filter "SOR > 3.0" \
-        &> /dev/null'%(gt_cmd,ref,outdir,iter,outdir,iter)
+def filter_variants(gt_cmd, ref, i, outdir):
+    """Filter variants based on GATK's suggestions"""
+    cmd = (
+        f'{gt_cmd} VariantFiltration '
+        f'-R {ref} '
+        f'-V {outdir}/tmp/iter{i}.vcf '
+        f'-O {outdir}/tmp/iter{i}.filt.vcf '
+        f'-filter-name "DP_filter" -filter "DP < 20.0" '
+        f'-filter-name "QD_filter" -filter "QD < 2.0" '
+        f'-filter-name "FS_filter" -filter "FS > 60.0" '
+        f'-filter-name "MQ_filter" -filter "MQ < 40.0" '
+        f'-filter-name "ReadPosRankSum_filter" -filter "ReadPosRankSum < -8.0" '
+        f'-filter-name "SOR_filter" -filter "SOR > 3.0" '
+        f'&> /dev/null'
+        )
     os.system(cmd)
 
 def mask_fasta(bt_cmd, ref, cov, bam, outfasta, outbed):
+    """Mask sequences with low coverage"""
     cmd1 = '''%s genomecov \
             -ibam %s \
             -bga | \
@@ -182,19 +218,19 @@ if __name__ == "__main__":
 
 
     #check that all software works
-    if shutil.which(bowtie2_cmd) == None:
+    if shutil.which(BOWTIE2_CMD) is None:
         print(sys.exit("Could not find bowtie2 command. Adjust python script or load module"))
-    if shutil.which(samtools_cmd) == None:
+    if shutil.which(SAMTOOLS_CMD) is None:
         print(sys.exit("Could not find Samtools command. Adjust python script or load module"))
-    if shutil.which(bedtools_cmd) == None:
+    if shutil.which(BEDTOOLS_CMD) is None:
         print(sys.exit("Could not find Bedtools command. Adjust python script or load module"))
-    gatk_stat = subprocess.getstatusoutput(gatk_cmd)
+    gatk_stat = subprocess.getstatusoutput(GATK_CMD)
     gatk_m = re.search("Usage", str(gatk_stat[1]))
-    if gatk_m == None:
+    if gatk_m is None:
         print(sys.exit("Could not find GATK command. Adjust python script or load module"))
-    picard_stat = subprocess.getstatusoutput(picard_cmd)
+    picard_stat = subprocess.getstatusoutput(PICARD_CMD)
     picard_m = re.search("PicardCommandLine", str(picard_stat[1]))
-    if picard_m == None:
+    if picard_m is None:
         print(sys.exit("Could not find Picard command. Adjust python script or load module"))
 
 	#Check for valid file format and parameters
@@ -210,107 +246,136 @@ if __name__ == "__main__":
 
 
     #### run main loop ####
-    iteration = 0
+    ITERATION = 0
 
-    while iteration <= args.maxIter:
-        #reached last iteration
-        if iteration == args.maxIter:
-            print("Iteration %s"%iteration)
-            print("Maximum number of iterations reached. Masking final consensus and terminating.")
-            mask_fasta(bedtools_cmd, '%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration-1), args.cov, '%s/tmp/iter%s.rmdup.bam'%(args.outdir,(iteration-1)), '%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1), '%s/tmp/consensus.iter%s.masked_sites.bed'%(args.outdir,iteration-1))
-            rename_sname('%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1),args.ref,'%s/tmp/consensus.iter%s.masked.sample_name.fa'%(args.outdir,iteration-1),args.name)
-            cmd0 = ("mv %s/tmp/consensus.iter%s.masked.sample_name.fa %s/%s.consensus.sample_name.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
-            os.system(cmd0)
-            print("Updated reference genome with bases < %s coverage masked is in %s/%s.consensus.fa"%(args.cov, args.outdir,args.name))
-            print("%s/%s.consensus.sample_name.fa includes sample name in fasta line"%(args.outdir,args.name))
-            cmd1 = ("mv %s/tmp/consensus.iter%s.masked.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
-            os.system(cmd1)
-            print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
-            cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
-            os.system(cmd2)
-            cmd3 = ("mv %s/tmp/iter%s.rmdup.bai %s/%s.bt2.rmdup.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
-            os.system(cmd3)
-            print("Filtered VCF file is in %s/%s.filt.vcf"%(args.outdir,args.name))
-            cmd4 = ("mv %s/tmp/iter%s.filt.vcf %s/%s.filt.vcf"%(args.outdir,(iteration-1),args.outdir,args.name))
-            os.system(cmd4)
+    while ITERATION <= args.maxIter:
+        #reached last ITERATION
+        if ITERATION == args.maxIter:
+            print(f"Iteration {ITERATION}")
+            print("Maximum number of ITERATIONs reached. Masking final consensus and terminating.")
+            mask_fasta(BEDTOOLS_CMD,
+                        f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa',
+                        args.cov,
+                        f'{args.outdir}/tmp/iter{ITERATION-1}.rmdup.bam',
+                        f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.fa',
+                        f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.masked_sites.bed')
+            rename_sname(f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.fa',
+                        args.ref,
+                        f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.sample_name.fa',
+                        args.name)
+            command0 = (
+                   f"mv {args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.sample_name.fa "
+                   f"{args.outdir}/{args.name}.consensus.sample_name.fa"
+                   )
+            os.system(command0)
+            print(f"Updated reference genome with bases < {args.cov} coverage masked is in {args.outdir}/{args.name}.consensus.fa")
+            print(f"{args.outdir}/{args.name}.consensus.sample_name.fa includes sample name in fasta line")
+            command1 = f"mv {args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.fa {args.outdir}/{args.name}.consensus.fa"
+            os.system(command1)
+            print(f"Duplicate-removed bam file is in {args.outdir}/{args.name}.bt2.rmdup.bam")
+            command2 = f"mv {args.outdir}/tmp/iter{ITERATION-1}.rmdup.bam {args.outdir}/{args.name}.bt2.rmdup.bam"
+            os.system(command2)
+            command3 = f"mv {args.outdir}/tmp/iter{ITERATION-1}.rmdup.bai {args.outdir}/{args.name}.bt2.rmdup.bai"
+            os.system(command3)
             if not args.keep:
-                os.system('rm -rf %s/tmp'%args.outdir)
-            iteration +=1
-        # in first iteration, map to original reference genome
-        elif iteration == 0:
-            print("Iteration %s"%iteration)
+                os.system(f'rm -rf {args.outdir}/tmp')
+            ITERATION +=1
+        # in first ITERATION, map to original reference genome
+        elif ITERATION == 0:
+            print(f"Iteration {ITERATION}")
             print("Indexing reference")
-            run_bowtie2_idx(bowtie2_cmd,args.ref)
+            run_bowtie2_idx(BOWTIE2_CMD,args.ref)
             print("Mapping reads")
-            run_bowtie2(bowtie2_cmd, samtools_cmd, args.ref, iteration, args.Threads, args.name, args.Left, args.Right, args.outdir)
-            alnrate = align_rate(iteration, args.outdir)
+            run_bowtie2(BOWTIE2_CMD, SAMTOOLS_CMD, args.ref, ITERATION, args.Threads, args.name, args.Left, args.Right, args.outdir)
+            alnrate = align_rate(ITERATION, args.outdir)
             print("Removing duplicates")
-            rmdup(picard_cmd,iteration, args.outdir)
-            print("Iteration %s alignment rate: %s"%(iteration,alnrate))
+            rmdup(PICARD_CMD,ITERATION, args.outdir)
+            print(f"Iteration {ITERATION} alignment rate: {alnrate}")
             print("Calling variants")
-            call_variants(gatk_cmd, samtools_cmd, args.ref,iteration, args.xmx, args.outdir, args.ploidy)
+            call_variants(GATK_CMD, SAMTOOLS_CMD, args.ref,ITERATION, args.xmx, args.outdir, args.ploidy)
             print("Filtering variants")
-            filter_variants(gatk_cmd,args.ref,iteration,args.outdir)
+            filter_variants(GATK_CMD,args.ref,ITERATION,args.outdir)
             if args.noindel:
                 print("Generating updated reference")
-                select_snps(gatk_cmd, args.ref,iteration, args.outdir)
-                consensus(gatk_cmd, args.ref,iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration), args.outdir)
-                rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
-                iteration +=1
+                select_snps(GATK_CMD, args.ref,ITERATION, args.outdir)
+                gen_consensus(GATK_CMD, args.ref,ITERATION,f"{args.outdir}/tmp/iter{ITERATION}.snps.vcf", args.outdir)
+                rename(f'{args.outdir}/tmp/consensus.iter{ITERATION}.tmpnames.fa',args.ref,f'{args.outdir}/tmp/consensus.iter{ITERATION}.fa')
+                ITERATION +=1
             else:
                 print("Generating updated reference")
-                consensus(gatk_cmd,args.ref,iteration,"%s/tmp/iter%s.filt.vcf"%(args.outdir,iteration), args.outdir)
-                rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
-                iteration +=1
+                gen_consensus(GATK_CMD,args.ref,ITERATION,f"{args.outdir}/tmp/iter{ITERATION}.filt.vcf", args.outdir)
+                rename(f'{args.outdir}/tmp/consensus.iter{ITERATION}.tmpnames.fa',args.ref,f'{args.outdir}/tmp/consensus.iter{ITERATION}.fa')
+                ITERATION +=1
         else:
-            #map to updated reference and check if alignment rate is better than last iteration
-            print("Iteration %s"%iteration)
+            #map to updated reference and check if alignment rate is better than last ITERATION
+            print(f"Iteration {ITERATION}")
             print("Indexing updated reference")
-            run_bowtie2_idx(bowtie2_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)))
+            run_bowtie2_idx(BOWTIE2_CMD,f"{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa")
             print("Mapping reads")
-            run_bowtie2(bowtie2_cmd, samtools_cmd, "%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.Threads, args.name, args.Left, args.Right, args.outdir)
-            alnrate_last = align_rate(iteration-1, args.outdir)
-            alnrate = align_rate(iteration, args.outdir)
-            print("Iteration %s alignment rate: %s"%((iteration-1),alnrate_last))
-            print("Iteration %s alignment rate: %s"%(iteration,alnrate))
+            run_bowtie2(BOWTIE2_CMD,
+                        SAMTOOLS_CMD,
+                        f"{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa",
+                        ITERATION, args.Threads, args.name, args.Left, args.Right, args.outdir)
+            alnrate_last = align_rate(ITERATION-1, args.outdir)
+            alnrate = align_rate(ITERATION, args.outdir)
+            print(f"Iteration {ITERATION-1} alignment rate: {alnrate_last}")
+            print(f"Iteration {ITERATION} alignment rate: {alnrate}")
             if alnrate > alnrate_last:
-                print("Iteration %s alignment rate better than previous iteration"%(iteration))
+                #alignment rate is better than last, make updated reference and continue
+                print(f"Iteration {ITERATION} alignment rate better than previous iteration")
                 print("Removing duplicates")
-                rmdup(picard_cmd,iteration, args.outdir)
+                rmdup(PICARD_CMD,ITERATION, args.outdir)
                 print("Calling variants")
-                call_variants(gatk_cmd, samtools_cmd, "%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.xmx, args.outdir, args.ploidy)
+                call_variants(GATK_CMD, SAMTOOLS_CMD,
+                            f"{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa",
+                            ITERATION, args.xmx, args.outdir, args.ploidy)
                 print("Filtering variants")
-                filter_variants(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,args.outdir)
+                filter_variants(GATK_CMD,f"{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa",ITERATION,args.outdir)
                 if args.noindel:
                     print("Generating updated reference")
-                    select_snps(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration, args.outdir)
-                    consensus(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.snps.vcf"%(args.outdir,iteration), args.outdir)
-                    rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
-                    iteration +=1
+                    select_snps(GATK_CMD,f"{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa",ITERATION, args.outdir)
+                    gen_consensus(GATK_CMD,
+                              f"{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa",
+                              ITERATION,
+                              f"{args.outdir}/tmp/iter{ITERATION}.snps.vcf", args.outdir)
+                    rename(f'{args.outdir}/tmp/consensus.iter{ITERATION}.tmpnames.fa',
+                            args.ref,
+                            f'{args.outdir}/tmp/consensus.iter{ITERATION}.fa')
+                    ITERATION +=1
                 else:
                     print("Generating updated reference")
-                    consensus(gatk_cmd,"%s/tmp/consensus.iter%s.fa"%(args.outdir,(iteration-1)),iteration,"%s/tmp/iter%s.filt.vcf"%(args.outdir,iteration), args.outdir)
-                    rename('%s/tmp/consensus.iter%s.tmpnames.fa'%(args.outdir,iteration),args.ref,'%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration))
-                    iteration +=1
+                    gen_consensus(GATK_CMD,
+                              f"{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa",
+                              ITERATION,
+                              f"{args.outdir}/tmp/iter{ITERATION}.filt.vcf", args.outdir)
+                    rename(f'{args.outdir}/tmp/consensus.iter{ITERATION}.tmpnames.fa',
+                            args.ref,
+                            f'{args.outdir}/tmp/consensus.iter{ITERATION}.fa')
+                    ITERATION +=1
             else:
+                #alignment rate is not better than last, finish
                 print("No improvement in alignment rate")
                 print("Generating final consensus sequence and bam file")
-                mask_fasta(bedtools_cmd, '%s/tmp/consensus.iter%s.fa'%(args.outdir,iteration-1), args.cov, '%s/tmp/iter%s.rmdup.bam'%(args.outdir,(iteration-1)), '%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1), '%s/tmp/consensus.iter%s.masked_sites.bed'%(args.outdir,iteration-1))
-                rename_sname('%s/tmp/consensus.iter%s.masked.fa'%(args.outdir,iteration-1),args.ref,'%s/tmp/consensus.iter%s.masked.sample_name.fa'%(args.outdir,iteration-1),args.name)
-                cmd0 = ("mv %s/tmp/consensus.iter%s.masked.sample_name.fa %s/%s.consensus.sample_name.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
-                os.system(cmd0)
-                print("Updated reference genome with bases < %s coverage masked is in %s/%s.consensus.fa"%(args.cov, args.outdir,args.name))
-                print("%s/%s.consensus.sample_name.fa includes sample name in fasta line"%(args.outdir,args.name))
-                cmd1 = ("mv %s/tmp/consensus.iter%s.masked.fa %s/%s.consensus.fa"%(args.outdir,(iteration-1),args.outdir,args.name))
-                os.system(cmd1)
-                print("Duplicate-removed bam file is in %s/%s.bt2.rmdup.bam"%(args.outdir,args.name))
-                cmd2 = ("mv %s/tmp/iter%s.rmdup.bam %s/%s.bt2.rmdup.bam"%(args.outdir,(iteration-1),args.outdir,args.name))
-                os.system(cmd2)
-                cmd3 = ("mv %s/tmp/iter%s.rmdup.bai %s/%s.bt2.rmdup.bai"%(args.outdir,(iteration-1),args.outdir,args.name))
-                os.system(cmd3)
-                print("Filtered VCF file is in %s/%s.filt.vcf"%(args.outdir,args.name))
-                cmd4 = ("mv %s/tmp/iter%s.filt.vcf %s/%s.filt.vcf"%(args.outdir,(iteration-1),args.outdir,args.name))
-                os.system(cmd4)
+                mask_fasta(BEDTOOLS_CMD,
+                           f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.fa',
+                           args.cov,
+                           f'{args.outdir}/tmp/iter{ITERATION-1}.rmdup.bam',
+                           f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.fa',
+                           f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.masked_sites.bed')
+                rename_sname(f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.fa',
+                            args.ref,
+                            f'{args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.sample_name.fa',args.name)
+                command0 = f"mv {args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.sample_name.fa {args.outdir}/{args.name}.consensus.sample_name.fa"
+                os.system(command0)
+                print(f"Updated reference genome with bases < {args.cov} coverage masked is in {args.outdir}/{args.name}.consensus.fa")
+                print(f"{args.outdir}/{args.name}.consensus.sample_name.fa includes sample name in fasta line")
+                command1 = f"mv {args.outdir}/tmp/consensus.iter{ITERATION-1}.masked.fa {args.outdir}/{args.name}.consensus.fa"
+                os.system(command1)
+                print(f"Duplicate-removed bam file is in {args.outdir}/{args.name}.bt2.rmdup.bam")
+                command2 = f"mv {args.outdir}/tmp/iter{ITERATION-1}.rmdup.bam {args.outdir}/{args.name}.bt2.rmdup.bam"
+                os.system(command2)
+                command3 = f"mv {args.outdir}/tmp/iter{ITERATION-1}.rmdup.bai {args.outdir}/{args.name}.bt2.rmdup.bai"
+                os.system(command3)
                 if not args.keep:
-                    os.system('rm -rf %s/tmp'%args.outdir)
+                    os.system(f'rm -rf {args.outdir}/tmp')
                 break
