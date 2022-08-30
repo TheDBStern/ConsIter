@@ -58,6 +58,7 @@ def run_bowtie2(bt2_cmd, smt_cmd, ref, i, threads, name, left, right, outdir):
         )
     os.system(cmd1)
     os.system(cmd2)
+    print(cmd1)
 
 def align_rate(i, outdir):
     """Collect alignment rate from bowtie2 output"""
@@ -130,11 +131,7 @@ def select_snps(gt_cmd, ref,i, outdir):
 
 def rename_sname(consensus,ref,outfasta,sample):
     """Rename the fasta headers with the sample name and reference name"""
-    with (
-    open(consensus, 'r', encoding="utf-8") as f,
-    open(outfasta,'w', encoding="utf-8") as new,
-    open('.'.join(ref.split('.')[:-1])+'.dict','r', encoding="utf-8") as refdict
-    ):
+    with open(consensus, 'r', encoding="utf-8") as f, open(outfasta,'w', encoding="utf-8") as new, open('.'.join(ref.split('.')[:-1])+'.dict','r', encoding="utf-8") as refdict:
         fasta = f.read()
         next(refdict)
         count=1
@@ -146,11 +143,7 @@ def rename_sname(consensus,ref,outfasta,sample):
 
 def rename(consensus,ref,outfasta):
     """Rename the sample readers with only the reference seq name"""
-    with (
-    open(consensus, 'r', encoding="utf-8") as f,
-    open(outfasta,'w', encoding="utf-8") as new,
-    open('.'.join(ref.split('.')[:-1])+'.dict','r', encoding="utf-8") as refdict
-    ):
+    with open(consensus, 'r', encoding="utf-8") as f, open(outfasta,'w', encoding="utf-8") as new, open('.'.join(ref.split('.')[:-1])+'.dict','r', encoding="utf-8") as refdict:
         fasta = f.read()
         next(refdict)
         count=1
@@ -170,7 +163,7 @@ def filter_variants(gt_cmd, ref, i, outdir):
         f'-filter-name "DP_filter" -filter "DP < 20.0" '
         f'-filter-name "QD_filter" -filter "QD < 2.0" '
         f'-filter-name "FS_filter" -filter "FS > 60.0" '
-        f'-filter-name "MQ_filter" -filter "MQ < 40.0" '
+        f'-filter-name "MQ_filter" -filter "MQ < 20.0" '
         f'-filter-name "ReadPosRankSum_filter" -filter "ReadPosRankSum < -8.0" '
         f'-filter-name "SOR_filter" -filter "SOR > 3.0" '
         f'&> /dev/null'

@@ -11,8 +11,8 @@ Bases in the final consensus fasta are masked if they are covered by fewer than 
 
 To install the appropriate packages in a conda environment, run
 ```
-conda create -n ConsIter bowtie2=2.4.4-0 gatk4=4.2.2.0-0 picard=2.26.0-0 samtools=1.13-0 bedtools=2.30.0
-conda activate ConsIter
+conda create -n consiter -y python=3.8 bowtie2=2.4.4-0 gatk4=4.2.2.0-0 picard=2.26.0-0 samtools=1.13-0 bedtools=2.30.0
+conda activate consiter
 ```
 
 #### Software  
