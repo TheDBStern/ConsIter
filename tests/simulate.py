@@ -16,14 +16,14 @@ def random_seq(rng: random.Random, length: int) -> str:
 def mutate(rng: random.Random, seq: str, n_snps: int, indels: list[tuple[int, str | int]]) -> str:
     """Apply ``n_snps`` random SNPs plus indels ``(pos, inserted_seq | deleted_length)``.
 
-    SNPs stay 400 bp away from the ends (where simulated coverage is low and
-    strand-biased) and 30 bp away from each other, so each one is callable.
+    SNPs stay 150 bp away from the ends (where simulated coverage is low) and
+    30 bp away from each other, so each one is callable.
     """
     s = list(seq)
     taken = {pos for pos, _ in indels}
     snps = []
     while len(snps) < n_snps:
-        pos = rng.randrange(400, len(seq) - 400)
+        pos = rng.randrange(150, len(seq) - 150)
         if all(abs(pos - t) > 30 for t in taken):
             taken.add(pos)
             snps.append(pos)

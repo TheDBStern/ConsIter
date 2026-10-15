@@ -63,3 +63,15 @@ def test_missing_programs():
         "definitely-not-a-real-program-xyz"
     ]
     assert tools.missing_programs([]) == []
+
+
+def test_variant_filtration_uses_min_depth_and_no_sor(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(tools, "run", lambda cmd, log, stdout=None: calls.append(cmd))
+    tools.variant_filtration(tmp_path / "r.fa", tmp_path / "in.vcf", tmp_path / "out.vcf", 7, 2,
+                             tmp_path / "f.log")  # fmt: skip
+    (cmd,) = calls
+    exprs = [cmd[i + 1] for i, a in enumerate(cmd) if a == "--filter-expression"]
+    assert "DP < 7" in exprs
+    assert not any("SOR" in e for e in exprs)
+    assert any("FS" in e for e in exprs)

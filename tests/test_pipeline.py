@@ -23,7 +23,9 @@ class FakeTools:
         mp.setattr(tools, "mark_duplicates", self.mark_duplicates)
         mp.setattr(tools, "prepare_reference", lambda ref, log: None)
         mp.setattr(tools, "haplotype_caller", self.haplotype_caller)
-        mp.setattr(tools, "variant_filtration", lambda ref, vcf, out, xmx, log: out.touch())
+        mp.setattr(
+            tools, "variant_filtration", lambda ref, vcf, out, min_depth, xmx, log: out.touch()
+        )
         mp.setattr(tools, "select_snps", self.select_snps)
         mp.setattr(tools, "alternate_reference", self.alternate_reference)
         mp.setattr(tools, "mask_low_coverage", self.mask_low_coverage)

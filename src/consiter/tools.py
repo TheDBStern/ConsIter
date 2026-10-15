@@ -17,14 +17,14 @@ from consiter.fasta import low_coverage_intervals
 
 REQUIRED_PROGRAMS = ("bowtie2", "bowtie2-build", "samtools", "gatk", "bedtools")
 
-# Variant filters suggested by GATK for hard filtering germline SNPs.
+# GATK's suggested hard filters for germline SNPs, minus SOR: SOR also penalises
+# overall strand imbalance, which is expected at contig ends and amplicon edges.
+# FS still catches allele-specific strand bias. Depth is filtered separately.
 VARIANT_FILTERS = {
-    "DP_filter": "DP < 20.0",
     "QD_filter": "QD < 2.0",
     "FS_filter": "FS > 60.0",
     "MQ_filter": "MQ < 20.0",
     "ReadPosRankSum_filter": "ReadPosRankSum < -8.0",
-    "SOR_filter": "SOR > 3.0",
 }
 
 
@@ -181,9 +181,12 @@ def haplotype_caller(ref: Path, bam: Path, vcf: Path, ploidy: int, xmx: int, log
     )
 
 
-def variant_filtration(ref: Path, vcf: Path, out_vcf: Path, xmx: int, log: Path) -> None:
+def variant_filtration(
+    ref: Path, vcf: Path, out_vcf: Path, min_depth: int, xmx: int, log: Path
+) -> None:
+    """Flag variants failing ``VARIANT_FILTERS`` or with depth below ``min_depth``."""
     filters = []
-    for name, expr in VARIANT_FILTERS.items():
+    for name, expr in {"DP_filter": f"DP < {min_depth}", **VARIANT_FILTERS}.items():
         filters += ["--filter-name", name, "--filter-expression", expr]
     run(_gatk("VariantFiltration", xmx, "-R", ref, "-V", vcf, "-O", out_vcf, *filters), log)
 

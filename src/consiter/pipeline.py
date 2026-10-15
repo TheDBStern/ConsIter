@@ -100,7 +100,7 @@ def _next_reference(
         ref, bam, vcf, cfg.ploidy, cfg.xmx, logs / f"iter{i}.haplotypecaller.log"
     )
     filt = work / f"iter{i}.filt.vcf"
-    tools.variant_filtration(ref, vcf, filt, cfg.xmx, logs / f"iter{i}.filter.log")
+    tools.variant_filtration(ref, vcf, filt, cfg.min_cov, cfg.xmx, logs / f"iter{i}.filter.log")
     if cfg.no_indel:
         snps = work / f"iter{i}.snps.vcf"
         tools.select_snps(ref, filt, snps, cfg.xmx, logs / f"iter{i}.select.log")

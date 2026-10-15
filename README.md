@@ -2,7 +2,7 @@
 Evolving viral populations often diverge substantially from available reference genomes, potentially reducing read mapping accuracy and biasing variant calls.
 ConsIter produces an updated reference genome that more closely matches the viral population by iteratively mapping reads to the reference and generating a new consensus sequence.
 
-In each iteration, paired-end reads are mapped to the current reference with Bowtie2, duplicates are removed, variants are called with GATK4 HaplotypeCaller and hard-filtered, and the passing variants are applied to make the next reference.
+In each iteration, paired-end reads are mapped to the current reference with Bowtie2, duplicates are removed, variants are called with GATK4 HaplotypeCaller and hard-filtered (QD, FS, MQ, ReadPosRankSum and depth), and the passing variants are applied to make the next reference.
 This continues until the alignment rate stops improving, or until the maximum number of consensus rounds is reached.
 The latest consensus is then written out together with the reads mapped to it, and bases covered by fewer than a given number of reads are masked with `N`.
 
@@ -42,7 +42,7 @@ Run `consiter --help` for all options:
 | `-i`, `--max-iter` | 5 | Maximum number of consensus rounds |
 | `-t`, `--threads` | 16 | Threads for Bowtie2 and Samtools |
 | `-p`, `--ploidy` | 1 | Ploidy for GATK HaplotypeCaller |
-| `-c`, `--min-cov` | 20 | Mask bases covered by fewer reads than this |
+| `-c`, `--min-cov` | 20 | Minimum read depth: variants below it are not applied, and bases below it are masked |
 | `--xmx` | 50 | Maximum Java heap size for GATK, in GB |
 | `--keep-tmp` | off | Keep the working directory `<outdir>/tmp`, including per-step logs |
 | `--no-indel` | off | Only apply SNPs, so the updated reference keeps the original coordinates |
@@ -62,6 +62,7 @@ If a step fails, ConsIter stops with the failing program's error, and `<outdir>/
 - Installed as the `consiter` command instead of `python3 ConsIter.py`.
 - `-ref` is now `-r`/`--ref`, `-xmx` is now `--xmx`, `--keep` is now `--keep-tmp`, and `--noindel` is now `--no-indel`.
 - The final BAM and the coverage mask now come from reads mapped to the final consensus (in 0.1, they came from the previous reference).
+- The variant depth filter now uses `--min-cov` (it was fixed at 20), and the SOR strand-bias filter was removed.
 
 ### Development
 

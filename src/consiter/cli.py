@@ -38,7 +38,8 @@ class Config:
     ploidy: Annotated[int, Arg(aliases=("-p",))] = 1
     """Sample ploidy for GATK HaplotypeCaller."""
     min_cov: Annotated[int, Arg(aliases=("-c",))] = 20
-    """Mask bases in the final consensus covered by fewer reads than this."""
+    """Minimum read depth: variants below it are not applied, and bases below it are
+    masked in the final consensus."""
     xmx: int = 50
     """Maximum Java heap size for GATK, in GB."""
     keep_tmp: bool = False
