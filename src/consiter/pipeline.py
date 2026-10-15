@@ -49,8 +49,12 @@ def _copy_reference(src: Path, dest: Path) -> None:
 def run(cfg: Config) -> Outputs:
     cfg.outdir.mkdir(parents=True, exist_ok=True)
     work = cfg.outdir / "tmp"
+    try:
+        work.mkdir()  # never reuse an existing directory: it is deleted at the end
+    except FileExistsError:
+        raise ValueError(f"{work} already exists; remove it or choose another --outdir") from None
     logs = work / "logs"
-    logs.mkdir(parents=True, exist_ok=True)
+    logs.mkdir()
 
     ref = work / "ref.iter0.fa"
     _copy_reference(cfg.ref, ref)

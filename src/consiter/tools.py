@@ -120,9 +120,20 @@ def bowtie2_map(
         p3.wait()
         p2.wait()
         p1.wait()
-    for cmd, proc in zip(cmds, (p1, p2, p3), strict=True):
-        if proc.returncode != 0:
-            raise _fail(cmd, proc.returncode, stats if proc is p1 else log)
+    # A failure downstream makes upstream stages die of SIGPIPE, so report every
+    # failed stage and every relevant log rather than just the first one.
+    failed = [
+        (cmd, proc, stats if proc is p1 else log)
+        for cmd, proc in zip(cmds, (p1, p2, p3), strict=True)
+        if proc.returncode != 0
+    ]
+    if failed:
+        msg = "\n".join(
+            f"{' '.join(cmd[:2])} exited with status {p.returncode}" for cmd, p, _ in failed
+        )
+        for path in dict.fromkeys(path for _, _, path in failed):
+            msg += f"\n--- {path} ---\n{_tail(path)}"
+        raise ToolError(msg)
     return parse_alignment_rate(stats.read_text(encoding="utf-8"))
 
 

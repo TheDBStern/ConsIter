@@ -62,6 +62,11 @@ def validate(cfg: Config) -> list[str]:
                          ("--ploidy", cfg.ploidy), ("--xmx", cfg.xmx)):  # fmt: skip
         if value < 1:
             errors.append(f"{label} must be at least 1 (got {value})")
+    if (cfg.outdir / "tmp").exists():
+        errors.append(
+            f"{cfg.outdir / 'tmp'} already exists and would be deleted; "
+            "remove it or choose another --outdir"
+        )
     if cfg.min_cov < 0:
         errors.append(f"--min-cov must not be negative (got {cfg.min_cov})")
     if any(c in cfg.name for c in "/\\| \t"):

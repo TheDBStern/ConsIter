@@ -1,3 +1,4 @@
+import os
 import sys
 
 import pytest
@@ -75,3 +76,26 @@ def test_variant_filtration_uses_min_depth_and_no_sor(monkeypatch, tmp_path):
     assert "DP < 7" in exprs
     assert not any("SOR" in e for e in exprs)
     assert any("FS" in e for e in exprs)
+
+
+def test_bowtie2_map_reports_downstream_failure(monkeypatch, tmp_path):
+    # samtools sort dies (e.g. disk full); bowtie2 and samtools view then die of SIGPIPE.
+    # The error must name samtools sort and show its message, not just bowtie2's.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "bowtie2").write_text("#!/bin/sh\nyes '@SQ\tSN:x'\n")
+    (bin_dir / "samtools").write_text(
+        '#!/bin/sh\nif [ "$1" = sort ]; then echo "No space left on device" >&2; exit 1; fi\ncat\n'
+    )
+    for f in bin_dir.iterdir():
+        f.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+    with pytest.raises(tools.ToolError) as exc:
+        tools.bowtie2_map(
+            tmp_path / "ref.fa", tmp_path / "R1.fq", tmp_path / "R2.fq", "S1", 1,
+            tmp_path / "out.bam", tmp_path / "stats.txt", tmp_path / "map.log",
+        )  # fmt: skip
+    msg = str(exc.value)
+    assert "samtools sort exited with status 1" in msg
+    assert "No space left on device" in msg

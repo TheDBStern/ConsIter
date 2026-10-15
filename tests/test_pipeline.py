@@ -138,3 +138,13 @@ def test_tool_failure_keeps_tmp(monkeypatch, cfg):
     with pytest.raises(tools.ToolError):
         pipeline.run(cfg)
     assert (cfg.outdir / "tmp").is_dir()
+
+
+def test_refuses_existing_tmp(monkeypatch, cfg):
+    FakeTools(monkeypatch, [90.0, 90.0])
+    unrelated = cfg.outdir / "tmp" / "precious.txt"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("keep me")
+    with pytest.raises(ValueError, match="already exists"):
+        pipeline.run(cfg)
+    assert unrelated.read_text() == "keep me"

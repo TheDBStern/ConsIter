@@ -44,7 +44,7 @@ Run `consiter --help` for all options:
 | `-p`, `--ploidy` | 1 | Ploidy for GATK HaplotypeCaller |
 | `-c`, `--min-cov` | 20 | Minimum read depth: variants below it are not applied, and bases below it are masked |
 | `--xmx` | 50 | Maximum Java heap size for GATK, in GB |
-| `--keep-tmp` | off | Keep the working directory `<outdir>/tmp`, including per-step logs |
+| `--keep-tmp` | off | Keep the working directory `<outdir>/tmp`, including per-step logs. ConsIter refuses to start if `<outdir>/tmp` already exists |
 | `--no-indel` | off | Only apply SNPs, so the updated reference keeps the original coordinates |
 
 By default, insertions and deletions are applied to the updated reference, so its coordinates can differ from the original reference.

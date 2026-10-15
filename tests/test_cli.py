@@ -66,3 +66,10 @@ def test_main_exits_on_invalid_input(tmp_path, capsys):
         cli.main(["-r", str(tmp_path / "nope.fa"), "-n", "S1",
                   "-1", str(tmp_path / "a"), "-2", str(tmp_path / "b")])  # fmt: skip
     assert "Cannot find reference" in str(exc.value.code)
+
+
+def test_validate_rejects_existing_tmp(inputs):
+    (inputs / "tmp").mkdir()
+    cfg = cli.Config(ref=inputs / "ref.fa", name="S1", left=inputs / "R1.fq",
+                     right=inputs / "R2.fq", outdir=inputs)  # fmt: skip
+    assert any("already exists" in e for e in cli.validate(cfg))
