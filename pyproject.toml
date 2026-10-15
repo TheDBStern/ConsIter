@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "consiter"
+version = "0.2.0"
+description = "Iteratively refine a viral reference genome to match the sequenced population"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "David B. Stern" }]
+requires-python = ">=3.10"
+dependencies = ["tyro>=1.0"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+consiter = "consiter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = ["integration: runs the full pipeline with bowtie2/GATK/samtools/bedtools"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
