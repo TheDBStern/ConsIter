@@ -107,7 +107,7 @@ def test_reports_statistics_for_every_iteration(dataset, tmp_path):
     assert float(rows[-1]["mean_depth"]) > 5
     # the loop ran out of changes to make rather than running out of iterations
     assert rows[-1]["stop_reason"] in ("fixed_point", "rate")
-    assert rows[-1]["changed"] == ""  # nothing is called after the last iteration
+    assert rows[-1]["changed"] == ("0" if rows[-1]["stop_reason"] == "fixed_point" else "")
 
 
 @pytest.mark.skipif(bool(missing_programs(["bcftools"])), reason="bcftools not on PATH")
