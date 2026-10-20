@@ -3,7 +3,9 @@ Evolving viral populations often diverge substantially from available reference 
 consiter produces an updated reference genome that more closely matches the viral population by iteratively mapping reads to the reference and generating a new consensus sequence.
 
 In each iteration, paired-end reads are mapped to the current reference with Bowtie2, duplicates are removed, variants are called (with GATK4 HaplotypeCaller and hard filters on QD, FS, MQ, ReadPosRankSum and depth, or with `bcftools` from the pileup), and the passing variants are applied to make the next reference.
+
 This continues until convergence (see below) or the maximum number of consensus rounds is reached. There are two convergence tests which can be chosen via the `--stop` flag. The **rate** test stops when the overall alignment rate no longer improves over the previous iteration, and the **consensus** test stops when the caller applies no new variant or returns a consensus seen in an earlier round (a cycle). Both are reported in `<name>.iterations.tsv` whichever is selected.
+
 The latest consensus is then written out together with the reads mapped to it, and bases covered by fewer than `--min-cov` reads are masked with `N`.
 
 Two read depth filters are used: a variant needs `--call-min-cov` reads to be applied to the *next* reference, while the output is masked at `--min-cov`.
@@ -64,7 +66,7 @@ This tool only works with **paired-end (PE) reads**.
 - `<name>.bt2.rmdup.bam` (and `.bai`): the reads aligned to the updated reference, with duplicates removed unless `--no-dedup` was given (the file name does not change).
 - `<name>.iterations.tsv`: one row per iteration — alignment rate, duplicate fraction, mean depth, coverage breadth at `--min-cov`, bases below `--min-cov`, a hash of the reference, whether the consensus was changed this round, and why the loop stopped. It is rewritten after every iteration, so it is there to inspect even if a later step fails.
 
-**Note** Consensus sequences that are mostly `N` will still have a high alignment rate. consiter warns when coverage is too thin to iterate from, when the duplicate fraction suggests an amplicon library, and when more than half the output is masked.
+**Note**-- Consensus sequences that are mostly `N` will still have a high alignment rate. consiter warns when coverage is too thin to iterate from, when the duplicate fraction suggests an amplicon library, and when more than half the output is masked.
 
 If a step fails, constier stops with the failing program's error, and `<outdir>/tmp` is kept so the logs in `<outdir>/tmp/logs` can be inspected.
 
