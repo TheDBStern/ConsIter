@@ -1,8 +1,4 @@
-"""Thin wrappers around the external programs used by the pipeline.
-
-Every wrapper runs its program with an argument list (no shell), writes the
-command and its output to a log file, and raises ``ToolError`` on failure.
-"""
+"""Thin wrappers around the external programs used by the pipeline."""
 
 from __future__ import annotations
 

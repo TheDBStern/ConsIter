@@ -31,9 +31,7 @@ def sequence_hash(fasta_path: Path) -> str:
     """Hash the records of a FASTA, ignoring line wrapping and case.
 
     Two files hash alike exactly when they hold the same sequences under the same
-    names, which is what makes a fixed point (the caller applied nothing) or a cycle
-    recognisable without aligning anything. Line wrapping has to be ignored because
-    the callers do not wrap identically.
+    names. Line wrapping has to be ignored because the callers do not wrap identically.
     """
     h = hashlib.sha1()
     with open(fasta_path, encoding="utf-8") as fh:

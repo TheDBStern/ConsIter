@@ -17,7 +17,7 @@ Arg = tyro.conf.arg
 
 @dataclass(frozen=True)
 class Config:
-    """ConsIter produces an updated reference genome that more closely matches the
+    """consiter produces an updated reference genome that more closely matches the
     sequenced viral population by iteratively mapping paired-end reads to the
     reference and generating a new consensus sequence."""
 
@@ -41,22 +41,18 @@ class Config:
     """Minimum depth for a base not to be masked in the final consensus.
     Coverage breadth is reported at this depth too."""
     call_min_cov: int = 2
-    """Minimum depth for a variant to be applied to the next reference.
-    Below --min-cov on purpose: the output is still masked at --min-cov, so a low gate lets
-    the loop repair thin regions without reporting what it called there."""
+    """Minimum depth for a variant to be applied to the next reference."""
     stop: Literal["both", "rate", "consensus"] = "both"
     """Which convergence test ends the loop, besides the --max-iter cap.
     rate: the alignment rate stopped improving.
-    consensus: the caller applied nothing (a fixed point) or returned a consensus
-    seen before (a cycle). Both are reported either way; this picks what breaks."""
+    consensus: the caller applied nothing or returned a consensus
+    seen before. Both are reported either way."""
     caller: Literal["gatk", "bcftools"] = "gatk"
     """Variant caller for the consensus rounds.
     bcftools recovers much more of the genome from a distant starting reference;
     GATK is slightly better once the reference is already close."""
     no_dedup: bool = False
-    """Keep duplicate reads, as an amplicon library needs.
-    Every read of an amplicon starts at the same primer boundary, so it is
-    indistinguishable from a PCR duplicate."""
+    """Keep duplicate reads, suggusted for amplicon libraries."""
     xmx: int = 50
     """Maximum Java heap size for GATK, in GB."""
     keep_tmp: bool = False

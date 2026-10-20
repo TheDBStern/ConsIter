@@ -1,23 +1,9 @@
-"""The ConsIter iteration loop.
+"""The consiter iteration loop.
 
 Each iteration maps the reads to the current reference, removes duplicates and
 records mapping and coverage statistics. If the alignment rate improved on the
 previous iteration (or this is the first one), variants are called and applied to
 produce the next reference.
-
-Two convergence tests can end the loop, and ``--stop`` chooses which of them break it:
-``rate``, when the overall alignment rate does not improve on the previous iteration,
-and ``consensus``, when the caller applies nothing (a fixed point) or returns a
-consensus seen before (a cycle). Either way ``max_iter`` consensus rounds is the cap.
-The current reference is then masked for low coverage using the reads mapped to it in
-this iteration, and written out.
-
-Two depths are used, and they are not the same: a variant needs ``call_min_cov``
-reads to be applied to the next reference, while the final consensus is masked at
-``min_cov``. Keeping the first low lets the loop repair thin regions, because a
-region that is never repaired never recruits the reads that would deepen it; keeping
-the second where it is means a thin call only reaches the output through the
-reference it shaped.
 """
 
 from __future__ import annotations
@@ -102,7 +88,7 @@ def _deduplicate(cfg: Config, i: int, work: Path, logs: Path) -> tuple[Path, flo
         log.warning(
             "Iteration %d: %.1f%% of reads were removed as duplicates. An amplicon "
             "library looks like this, because every read of an amplicon starts at the "
-            "same primer boundary; if this is one, rerun with --no-dedup.",
+            "same position; if this is one, rerun with --no-dedup.",
             i, 100 * duplicates,
         )  # fmt: skip
     return bam, duplicates
