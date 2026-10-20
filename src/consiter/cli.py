@@ -6,7 +6,7 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import tyro
 
@@ -17,7 +17,7 @@ Arg = tyro.conf.arg
 
 @dataclass(frozen=True)
 class Config:
-    """ConsIter produces an updated reference genome that more closely matches the
+    """consiter produces an updated reference genome that more closely matches the
     sequenced viral population by iteratively mapping paired-end reads to the
     reference and generating a new consensus sequence."""
 
@@ -31,15 +31,28 @@ class Config:
     """Right (R2) reads in FASTQ format."""
     outdir: Annotated[Path, Arg(aliases=("-o",))] = Path(".")
     """Output directory."""
-    max_iter: Annotated[int, Arg(aliases=("-i",))] = 5
-    """Maximum number of consensus rounds."""
+    max_iter: Annotated[int, Arg(aliases=("-i",))] = 10
+    """Maximum number of consensus rounds; the loop usually stops earlier, at a fixed point."""
     threads: Annotated[int, Arg(aliases=("-t",))] = 16
     """Number of threads for bowtie2 and samtools."""
     ploidy: Annotated[int, Arg(aliases=("-p",))] = 1
-    """Sample ploidy for GATK HaplotypeCaller."""
+    """Sample ploidy for the variant caller (the bcftools caller supports 1 or 2)."""
     min_cov: Annotated[int, Arg(aliases=("-c",))] = 20
-    """Minimum read depth: variants below it are not applied, and bases below it are
-    masked in the final consensus."""
+    """Minimum depth for a base not to be masked in the final consensus.
+    Coverage breadth is reported at this depth too."""
+    call_min_cov: int = 2
+    """Minimum depth for a variant to be applied to the next reference."""
+    stop: Literal["both", "rate", "consensus"] = "both"
+    """Which convergence test ends the loop, besides the --max-iter cap.
+    rate: the alignment rate stopped improving.
+    consensus: the caller applied nothing or returned a consensus
+    seen before. Both are reported either way."""
+    caller: Literal["gatk", "bcftools"] = "gatk"
+    """Variant caller for the consensus rounds.
+    bcftools recovers much more of the genome from a distant starting reference;
+    GATK is slightly better once the reference is already close."""
+    no_dedup: bool = False
+    """Keep duplicate reads, suggusted for amplicon libraries."""
     xmx: int = 50
     """Maximum Java heap size for GATK, in GB."""
     keep_tmp: bool = False
@@ -67,8 +80,11 @@ def validate(cfg: Config) -> list[str]:
             f"{cfg.outdir / 'tmp'} already exists and would be deleted; "
             "remove it or choose another --outdir"
         )
-    if cfg.min_cov < 0:
-        errors.append(f"--min-cov must not be negative (got {cfg.min_cov})")
+    for label, value in (("--min-cov", cfg.min_cov), ("--call-min-cov", cfg.call_min_cov)):
+        if value < 0:
+            errors.append(f"{label} must not be negative (got {value})")
+    if cfg.caller == "bcftools" and cfg.ploidy > 2:
+        errors.append(f"--caller bcftools supports --ploidy 1 or 2 (got {cfg.ploidy})")
     if any(c in cfg.name for c in "/\\| \t"):
         errors.append(f"--name must not contain '/', '\\', '|' or whitespace (got {cfg.name!r})")
     return errors
@@ -79,7 +95,8 @@ def main(args: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
 
     errors = validate(cfg)
-    missing = tools.missing_programs()
+    required = tools.BCFTOOLS_PROGRAMS if cfg.caller == "bcftools" else tools.REQUIRED_PROGRAMS
+    missing = tools.missing_programs(required)
     if missing:
         errors.append(
             "Required programs not found on PATH: "

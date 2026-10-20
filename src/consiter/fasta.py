@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
@@ -24,6 +25,22 @@ def read_fasta_names(fasta_path: Path) -> list[str]:
     """Return the first word of every header in a FASTA file."""
     with open(fasta_path, encoding="utf-8") as fh:
         return [line[1:].split()[0] for line in fh if line.startswith(">")]
+
+
+def sequence_hash(fasta_path: Path) -> str:
+    """Hash the records of a FASTA, ignoring line wrapping and case.
+
+    Two files hash alike exactly when they hold the same sequences under the same
+    names. Line wrapping has to be ignored because the callers do not wrap identically.
+    """
+    h = hashlib.sha1()
+    with open(fasta_path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.startswith(">"):
+                h.update(f">{line[1:].split()[0]}\n".encode())
+            else:
+                h.update(line.strip().upper().encode())
+    return h.hexdigest()[:12]
 
 
 def rename_headers(src: Path, dest: Path, names: list[str], prefix: str | None = None) -> None:

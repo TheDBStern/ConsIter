@@ -89,6 +89,53 @@ def test_recovers_snps_and_indels(dataset, tmp_path):
     assert not (d / "ref.fa.fai").exists()  # no index files next to the input
 
 
+def iterations(out):
+    rows = [line.split("\t") for line in (out / "S1.iterations.tsv").read_text().splitlines()]
+    return [dict(zip(rows[0], row, strict=True)) for row in rows[1:]]
+
+
+def test_reports_statistics_for_every_iteration(dataset, tmp_path):
+    d, ref, truth = dataset
+    out = tmp_path / "out"
+    run_consiter(d, out)
+
+    rows = iterations(out)
+    assert [r["iteration"] for r in rows] == [str(i) for i in range(len(rows))]
+    assert float(rows[0]["alignment_rate"]) > 0
+    assert 0 < float(rows[-1]["breadth"]) <= 1
+    assert float(rows[-1]["breadth"]) >= float(rows[0]["breadth"])
+    assert float(rows[-1]["mean_depth"]) > 5
+    # the loop ran out of changes to make rather than running out of iterations
+    assert rows[-1]["stop_reason"] in ("fixed_point", "rate")
+    assert rows[-1]["changed"] == ("0" if rows[-1]["stop_reason"] == "fixed_point" else "")
+
+
+@pytest.mark.skipif(bool(missing_programs(["bcftools"])), reason="bcftools not on PATH")
+def test_bcftools_caller(dataset, tmp_path):
+    d, ref, truth = dataset
+    out = tmp_path / "out"
+    run_consiter(d, out, "--caller", "bcftools", "--call-min-cov", "2")
+
+    consensus = read_fasta(out / "S1.consensus.fa")
+    assert list(consensus) == ["contigA", "contigB"]
+    for name in truth:
+        assert matches_outside_mask(consensus[name], truth[name]), name
+        assert consensus[name].count("N") < 0.05 * len(truth[name])
+    assert iterations(out)[-1]["stop_reason"] in ("fixed_point", "cycle", "rate", "max_iter")
+
+
+def test_no_dedup_keeps_duplicates(dataset, tmp_path):
+    d, ref, truth = dataset
+    out = tmp_path / "out"
+    run_consiter(d, out, "--no-dedup")
+
+    assert iterations(out)[0]["duplicate_fraction"] == ""
+    consensus = read_fasta(out / "S1.consensus.fa")
+    for name in truth:
+        assert matches_outside_mask(consensus[name], truth[name]), name
+    assert (out / "S1.bt2.rmdup.bai").is_file()
+
+
 def test_no_indel_keeps_coordinates(dataset, tmp_path):
     d, ref, truth = dataset
     out = tmp_path / "out"
