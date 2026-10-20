@@ -11,11 +11,14 @@ import shlex
 import shutil
 import subprocess
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from consiter.fasta import low_coverage_intervals
 
 REQUIRED_PROGRAMS = ("bowtie2", "bowtie2-build", "samtools", "gatk", "bedtools")
+# Only needed for --caller bcftools, so it is checked for separately.
+BCFTOOLS_PROGRAMS = (*REQUIRED_PROGRAMS, "bcftools")
 
 # GATK's suggested hard filters for germline SNPs, minus SOR: SOR also penalises
 # overall strand imbalance, which is expected at contig ends and amplicon edges.
@@ -93,18 +96,24 @@ def bowtie2_map(
     out_bam: Path,
     stats: Path,
     log: Path,
+    *,
+    preset: Sequence[str] = ("--sensitive-local",),
+    min_mapq: int = 20,
+    proper_pair: bool = True,
 ) -> float:
-    """Map paired reads, keep properly paired MAPQ>=20 reads, sort to ``out_bam``.
+    """Map paired reads, keep properly paired MAPQ>=``min_mapq`` reads, sort to ``out_bam``.
 
-    bowtie2's summary is written to ``stats`` and the overall alignment rate is returned.
+    ``preset`` holds the bowtie2 alignment options. bowtie2's summary is written to
+    ``stats`` and the overall alignment rate is returned.
     """
     bt2 = [
-        "bowtie2", "-p", threads, "--no-unal", "--sensitive-local",
+        "bowtie2", "-p", threads, "--no-unal", *preset,
         "--rg-id", sample, "--rg", f"SM:{sample}", "--rg", "LB:1", "--rg", "PU:1",
         "--rg", "PL:illumina",
         "-x", index, "-1", left, "-2", right,
     ]  # fmt: skip
-    view = ["samtools", "view", "-u", "-f", "0x2", "-q", "20", "-"]
+    view = ["samtools", "view", "-u", *(["-f", "0x2"] if proper_pair else []),
+            "-q", str(min_mapq), "-"]  # fmt: skip
     sort = ["samtools", "sort", "-@", threads, "-o", out_bam, "-"]
     cmds = [[str(c) for c in cmd] for cmd in (bt2, view, sort)]
 
@@ -135,6 +144,29 @@ def bowtie2_map(
             msg += f"\n--- {path} ---\n{_tail(path)}"
         raise ToolError(msg)
     return parse_alignment_rate(stats.read_text(encoding="utf-8"))
+
+
+def index_bam(bam: Path, log: Path) -> None:
+    """Index ``bam`` as ``<stem>.bai``, the name MarkDuplicates' ``--CREATE_INDEX`` writes."""
+    run(["samtools", "index", "-o", bam.with_suffix(".bai"), bam], log)
+
+
+def duplicate_fraction(metrics: Path) -> float | None:
+    """``PERCENT_DUPLICATION`` from a MarkDuplicates metrics file.
+
+    ``None`` when the file carries no usable value, as it does for an empty BAM.
+    """
+    with open(metrics, encoding="utf-8") as fh:
+        for line in fh:
+            if not line.startswith("LIBRARY\t"):
+                continue
+            keys = line.rstrip("\n").split("\t")
+            values = next(fh, "").rstrip("\n").split("\t")
+            try:
+                return float(dict(zip(keys, values, strict=False))["PERCENT_DUPLICATION"])
+            except (KeyError, ValueError):
+                return None
+    return None
 
 
 def mark_duplicates(in_bam: Path, out_bam: Path, metrics: Path, xmx: int, log: Path) -> None:
@@ -227,25 +259,104 @@ def alternate_reference(ref: Path, vcf: Path, out_fasta: Path, xmx: int, log: Pa
     run(_gatk("FastaAlternateReferenceMaker", xmx, "-R", ref, "-V", vcf, "-O", out_fasta), log)
 
 
-def mask_low_coverage(
-    ref: Path, bam: Path, min_cov: int, out_fasta: Path, out_bed: Path, log: Path
-) -> int:
-    """Replace bases covered by fewer than ``min_cov`` reads with N.
+def _bcftools_ploidy(ploidy: int) -> list[str]:
+    """``bcftools call``'s ploidy options: it takes presets, not an arbitrary number."""
+    if ploidy == 1:
+        return ["--ploidy", "1"]
+    if ploidy == 2:
+        return []  # bcftools calls diploid by default
+    raise ValueError(f"the bcftools caller supports --ploidy 1 or 2 (got {ploidy})")
 
-    Returns the number of masked bases.
+
+def bcftools_consensus(
+    ref: Path,
+    bam: Path,
+    out_fasta: Path,
+    min_depth: int,
+    ploidy: int,
+    log: Path,
+    *,
+    snps_only: bool = False,
+) -> None:
+    """Call variants from the pileup and apply the passing ones to ``ref``.
+
+    A pileup alternative to ``haplotype_caller`` + ``variant_filtration`` +
+    ``alternate_reference``; ``min_depth`` is the depth a variant needs to be applied,
+    as GATK's ``DP_filter`` is there. Intermediate files are written beside
+    ``out_fasta``, so ``--keep-tmp`` exposes the calls.
+    """
+    ploidy_args = _bcftools_ploidy(ploidy)  # before any work, so a bad ploidy fails fast
+    run(["samtools", "faidx", ref], log.with_suffix(".faidx.log"))
+    pileup = out_fasta.with_suffix(".pileup.bcf")
+    run(
+        ["bcftools", "mpileup", "-f", ref, "-a", "AD,DP", "-q", 20, "-Q", 20,
+         "-d", 1000000, "-Ob", "-o", pileup, bam],
+        log.with_suffix(".mpileup.log"),
+    )  # fmt: skip
+    calls = out_fasta.with_suffix(".calls.bcf")
+    run(["bcftools", "call", *ploidy_args, "-mv", "-Ob", "-o", calls, pileup],
+        log.with_suffix(".call.log"))  # fmt: skip
+    normed = out_fasta.with_suffix(".norm.bcf")
+    run(["bcftools", "norm", "-f", ref, "-Ob", "-o", normed, calls], log.with_suffix(".norm.log"))
+    passing = out_fasta.with_suffix(".pass.vcf.gz")
+    run(
+        ["bcftools", "view", "-i", f"QUAL>=20 && INFO/DP>={min_depth}",
+         *(["-V", "indels"] if snps_only else []), "-Oz", "-o", passing, normed],
+        log.with_suffix(".view.log"),
+    )  # fmt: skip
+    run(["bcftools", "index", passing], log.with_suffix(".index.log"))
+    run(["bcftools", "consensus", "-f", ref, "-o", out_fasta, passing],
+        log.with_suffix(".consensus.log"))  # fmt: skip
+
+
+@dataclass(frozen=True)
+class Coverage:
+    """Depth of one BAM over the reference it was mapped to."""
+
+    low_bases: int
+    """Bases covered by fewer than ``min_cov`` reads: what masking would replace with N."""
+    total_bases: int
+    mean_depth: float
+
+    @property
+    def breadth(self) -> float:
+        """Fraction of the reference covered at least ``min_cov`` deep."""
+        return 1 - self.low_bases / self.total_bases if self.total_bases else 0.0
+
+    @property
+    def masked_fraction(self) -> float:
+        return self.low_bases / self.total_bases if self.total_bases else 0.0
+
+
+def coverage_summary(bam: Path, min_cov: int, out_bed: Path, log: Path) -> Coverage:
+    """Summarise depth, writing the intervals below ``min_cov`` to ``out_bed``.
+
+    The BED is what ``mask_fasta`` masks, so one pass of ``bedtools genomecov`` serves
+    both the statistics reported for an iteration and the masking of the final one.
     """
     bedgraph = out_bed.with_suffix(".bedgraph")
     run(
         ["bedtools", "genomecov", "-ibam", bam, "-bga"], log.with_suffix(".genomecov.log"), bedgraph
     )
-    masked = 0
+    low = 0
     with open(bedgraph, encoding="utf-8") as fin, open(out_bed, "w", encoding="utf-8") as fout:
         for line in low_coverage_intervals(fin, min_cov):
             _, start, end = line.split("\t")
-            masked += int(end) - int(start)
+            low += int(end) - int(start)
             fout.write(line)
+    total, depth_sum = 0, 0.0
+    with open(bedgraph, encoding="utf-8") as fin:
+        for line in fin:
+            _, start, end, depth = line.split("\t")[:4]
+            span = int(end) - int(start)
+            total += span
+            depth_sum += float(depth) * span
+    return Coverage(low, total, depth_sum / total if total else 0.0)
+
+
+def mask_fasta(ref: Path, bed: Path, out_fasta: Path, log: Path) -> None:
+    """Write ``ref`` to ``out_fasta`` with the bases in ``bed`` replaced by N."""
     run(
-        ["bedtools", "maskfasta", "-fi", ref, "-bed", out_bed, "-fo", out_fasta],
+        ["bedtools", "maskfasta", "-fi", ref, "-bed", bed, "-fo", out_fasta],
         log.with_suffix(".maskfasta.log"),
     )
-    return masked
