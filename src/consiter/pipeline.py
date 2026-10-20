@@ -165,6 +165,7 @@ def run(cfg: Config) -> Outputs:
         new_ref = _next_reference(cfg, i, ref, bam, names, work, logs)
         new_hash = sequence_hash(new_ref)
         rows[-1]["changed"] = int(new_hash != ref_hash)
+        _write_iterations(tsv, rows)
         if cfg.stop in ("both", "consensus"):
             if new_hash == ref_hash:
                 stop_reason = "fixed_point"
