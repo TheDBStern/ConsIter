@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          if [ "$tag" != "$version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match pyproject.toml version $version" >&2
+            exit 1
+          fi
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "No CHANGELOG.md section for ${GITHUB_REF_NAME#v}" >&2
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "consiter $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
